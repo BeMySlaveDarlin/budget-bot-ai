@@ -1,0 +1,109 @@
+services:
+  app:
+    container_name: ${COMPOSE_PROJECT_NAME}.app
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: php_${APP_ENV:-dev}
+      args:
+        timezone: ${TIMEZONE:-Asia/Bangkok}
+    restart: unless-stopped
+    env_file:
+      - .env
+    working_dir: /var/www/app
+    volumes:
+      - ./app:/var/www/app
+      - ./runtime:/var/www/app/runtime
+      - ./.env:/var/www/app/.env:ro
+    ports:
+      - "${SWOOLE_EXTERNAL_PORT:-9501}:${SWOOLE_PORT:-9501}"
+    command: ["php", "bin/cli.php", "start"]
+    depends_on:
+      database:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "php", "-v"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  composer:
+    container_name: ${COMPOSE_PROJECT_NAME}.composer
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      target: composer
+      args:
+        timezone: ${TIMEZONE:-Asia/Bangkok}
+    env_file:
+      - .env
+    volumes:
+      - ./app:/var/www/app
+    networks:
+      - app-network
+    profiles:
+      - tools
+
+  database:
+    container_name: ${COMPOSE_PROJECT_NAME}.database
+    image: postgres:18-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      TZ: ${TIMEZONE:-Asia/Bangkok}
+    ports:
+      - "${DB_EXTERNAL_PORT:-5432}:5432"
+    volumes:
+      - database_data:/var/lib/postgresql/data
+      - ./docker/pgsql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  memcached:
+    container_name: ${COMPOSE_PROJECT_NAME}.memcached
+    image: memcached:alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo stats | nc localhost 11211 | grep uptime || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${MEMCACHED_PORT:-11211}:11211"
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  database_data:
+
+networks:
+  app-network:
+    driver: bridge

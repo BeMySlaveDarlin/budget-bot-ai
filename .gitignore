@@ -1,0 +1,17 @@
+.env
+.idea/
+.vscode/
+*.log
+.DS_Store
+
+app/vendor/
+
+runtime/logs/*
+runtime/cache/*
+runtime/tmp/*
+!runtime/logs/.gitkeep
+!runtime/cache/.gitkeep
+!runtime/tmp/.gitkeep
+
+# Project exclude paths
+/runtime/
