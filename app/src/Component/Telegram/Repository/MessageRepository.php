@@ -29,7 +29,7 @@ class MessageRepository
         $dateFrom = $this->calculateBillingPeriodStart($months, $billingDay);
 
         return $this->db->query(
-            "SELECT raw_text, created_at FROM messages
+            "SELECT id, raw_text, created_at, categorized FROM messages
              WHERE chat_id = ? AND created_at >= ?
              ORDER BY created_at DESC",
             [$chatId, $dateFrom]
@@ -79,5 +79,23 @@ class MessageRepository
             'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ?',
             [$chatId, $telegramMessageId]
         ) > 0;
+    }
+
+    public function updateCategorization(array $items): void
+    {
+        $grouped = [];
+        foreach ($items as $item) {
+            $id = $item['message_id'] ?? null;
+            if ($id !== null) {
+                $grouped[$id][] = $item;
+            }
+        }
+
+        foreach ($grouped as $messageId => $positions) {
+            $this->db->execute(
+                "UPDATE messages SET categorized = ?::jsonb WHERE id = ?",
+                [json_encode($positions, JSON_UNESCAPED_UNICODE), $messageId]
+            );
+        }
     }
 }

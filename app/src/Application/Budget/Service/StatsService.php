@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Application\Budget\Service;
 
-use App\Component\Telegram\Repository\ChatRepository;
-use App\Component\Telegram\Repository\MessageRepository;
-use App\Service\Settings\Repository\ChatPromptRepository;
 use App\Component\ExchangeRate\ExchangeRateService;
 use App\Component\LLM\Client\Contract\LLMClientInterface;
 use App\Component\LLM\DTO\ChatRequest;
@@ -15,7 +12,10 @@ use App\Component\LLM\DTO\ToolDefinition;
 use App\Component\LLM\Exception\TokenLimitExceededException;
 use App\Component\LLM\LLMClientFactory;
 use App\Component\LLM\Repository\LlmUsageRepository;
+use App\Component\Telegram\Repository\ChatRepository;
+use App\Component\Telegram\Repository\MessageRepository;
 use App\Service\Config\Config;
+use App\Service\Settings\Repository\ChatPromptRepository;
 use DI\Attribute\Injectable;
 use Psr\Log\LoggerInterface;
 
@@ -71,68 +71,76 @@ class StatsService
             ];
         }
 
-        $this->checkTokenLimit();
+        $cached = [];
+        $uncategorized = [];
+        foreach ($messages as $msg) {
+            if (!empty($msg['categorized'])) {
+                $items = is_string($msg['categorized']) ? json_decode($msg['categorized'], true) : $msg['categorized'];
+                foreach ($items as $item) {
+                    $cached[] = $item;
+                }
+            } else {
+                $uncategorized[] = $msg;
+            }
+        }
 
-        $categories = $this->chatRepo->getCategories($chatId)
-            ?? $this->config->get('llm.default_categories');
+        $tokensUsed = 0;
 
-        $systemPrompt = $this->buildSystemPrompt($chatId, $currency, $categories);
-        $context = $this->formatMessagesAsJson($messages);
+        if (!empty($uncategorized)) {
+            $this->checkTokenLimit();
 
-        $userContent = json_encode([
-            'messages' => $context,
-        ], JSON_UNESCAPED_UNICODE);
+            $categories = $this->chatRepo->getCategories($chatId) ?? $this->config->get('llm.default_categories');
+            $systemPrompt = $this->buildSystemPrompt($chatId, $currency, $categories);
+            $context = $this->formatMessagesAsJson($uncategorized);
+            $userContent = json_encode(['messages' => $context], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
-        try {
-            $tool = $this->buildCategorizationTool();
-            $request = ChatRequest::create([
-                Message::system($systemPrompt),
-                Message::user($userContent),
-            ])->withTools([$tool]);
+            try {
+                $tool = $this->buildCategorizationTool();
+                $request = ChatRequest::create([
+                    Message::system($systemPrompt),
+                    Message::user($userContent),
+                ]);
 
-            $response = $this->llmClient->chat($request);
+                $request
+                    ->withTools([$tool])
+                    ->withMaxTokens((int) $this->config->get('llm.providers.claude.max_tokens', 64000));
 
-            $this->usageRepo->logUsage(
-                $this->llmClient->getProviderCode(),
-                $response->usage->inputTokens,
-                $response->usage->outputTokens
-            );
-
-            $items = $this->extractToolData($response);
-            $converted = $this->convertCurrencies($items, $currency);
-            $statsText = $this->formatStats($converted, $currency, $verbose);
-
-            $totalTokens = $response->usage->totalTokens;
-
-            $planningPeriod = $this->chatRepo->getPlanningPeriod($chatId);
-            $advice = $this->getAdvice($statsText, $currency, $planningPeriod);
-            if ($advice['text']) {
-                $statsText .= "\n\n💡 " . $advice['text'];
-                $totalTokens += $advice['tokens'];
+                $response = $this->llmClient->chat($request);
 
                 $this->usageRepo->logUsage(
                     $this->llmClient->getProviderCode(),
-                    (int) ($advice['tokens'] * 0.3),
-                    (int) ($advice['tokens'] * 0.7)
+                    $response->usage->inputTokens,
+                    $response->usage->outputTokens
                 );
+
+                $newItems = $this->extractToolData($response);
+                $this->messageRepo->updateCategorization($newItems);
+
+                $cached = array_merge($cached, $newItems);
+                $tokensUsed = $response->usage->totalTokens;
+            } catch (\Throwable $e) {
+                $this->logger->error('Stats LLM request failed', [
+                    'error' => $e->getMessage(),
+                    'class' => get_class($e),
+                    'chat_id' => $chatId,
+                ]);
+
+                if (empty($cached)) {
+                    return [
+                        'text' => $this->formatBasicStats($messages, $months),
+                        'tokens' => 0,
+                    ];
+                }
             }
-
-            return [
-                'text' => $statsText,
-                'tokens' => $totalTokens,
-            ];
-        } catch (\Throwable $e) {
-            $this->logger->error('Stats LLM request failed', [
-                'error' => $e->getMessage(),
-                'class' => get_class($e),
-                'chat_id' => $chatId,
-            ]);
-
-            return [
-                'text' => $this->formatBasicStats($messages, $months),
-                'tokens' => 0,
-            ];
         }
+
+        $converted = $this->convertCurrencies($cached, $currency);
+        $statsText = $this->formatStats($converted, $currency, $verbose);
+
+        return [
+            'text' => $statsText,
+            'tokens' => $tokensUsed,
+        ];
     }
 
     private function buildCategorizationTool(): ToolDefinition
@@ -149,17 +157,25 @@ class StatsService
                         'items' => [
                             'type' => 'object',
                             'properties' => [
+                                'message_id' => [
+                                    'type' => 'integer',
+                                    'description' => 'ID сообщения из входных данных',
+                                ],
                                 'type' => [
                                     'type' => 'string',
-                                    'enum' => ['income', 'expense'],
-                                    'description' => 'Тип: income (доход) или expense (расход)',
+                                    'enum' => ['income', 'expense', 'balance'],
+                                    'description' => 'Тип: income (доход), expense (расход), balance (остаток на счёте)',
+                                ],
+                                'wallet' => [
+                                    'type' => 'string',
+                                    'description' => 'Название кошелька/счёта (обязательно для balance)',
                                 ],
                                 'category' => ['type' => 'string', 'description' => 'Категория'],
                                 'amount' => ['type' => 'number', 'description' => 'Сумма как в тексте'],
                                 'currency' => ['type' => 'string', 'description' => 'Валюта позиции'],
                                 'description' => ['type' => 'string', 'description' => 'Описание из текста'],
                             ],
-                            'required' => ['type', 'category', 'amount', 'currency', 'description'],
+                            'required' => ['message_id', 'type', 'category', 'amount', 'currency', 'description'],
                         ],
                     ],
                 ],
@@ -171,7 +187,19 @@ class StatsService
     private function extractToolData($response): array
     {
         if (!empty($response->toolCalls)) {
-            return $response->toolCalls[0]->arguments['items'] ?? [];
+            $items = [];
+            foreach ($response->toolCalls as $toolCall) {
+                $callItems = $toolCall->arguments['items'] ?? [];
+                array_push($items, ...$callItems);
+            }
+            return $items;
+        }
+
+        $text = $response->asText();
+        if ($text && preg_match('/```json\s*(.*?)\s*```/s', $text, $matches)) {
+            $json = json_decode($matches[1], true);
+
+            return $json['items'] ?? $json['transactions'] ?? [];
         }
 
         return [];
@@ -193,7 +221,9 @@ class StatsService
             }
 
             $result[] = [
+                'message_id' => $item['message_id'] ?? null,
                 'type' => $item['type'] ?? 'expense',
+                'wallet' => $item['wallet'] ?? null,
                 'category' => $item['category'] ?? 'другое',
                 'amount' => $amount,
                 'description' => $item['description'] ?? '',
@@ -209,13 +239,15 @@ class StatsService
     {
         $income = array_filter($items, fn($i) => $i['type'] === 'income');
         $expenses = array_filter($items, fn($i) => $i['type'] === 'expense');
+        $balances = array_filter($items, fn($i) => $i['type'] === 'balance');
 
         $incomeByCategory = $this->groupByCategory($income);
         $expensesByCategory = $this->groupByCategory($expenses);
 
         $totalIncome = array_sum(array_column($income, 'amount'));
         $totalExpenses = array_sum(array_column($expenses, 'amount'));
-        $balance = $totalIncome - $totalExpenses;
+        $totalWalletBalance = $this->calculateWalletBalances($balances);
+        $periodBalance = $totalIncome - $totalExpenses;
 
         $lines = [];
 
@@ -225,10 +257,8 @@ class StatsService
                 $emoji = $this->getCategoryEmoji($category);
                 $sum = array_sum(array_column($categoryItems, 'amount'));
                 $lines[] = "• {$emoji} {$category}: " . $this->formatAmount($sum) . " {$currency}";
-                if ($verbose) {
-                    foreach ($categoryItems as $item) {
-                        $lines[] = $this->formatItemLine($item, $currency);
-                    }
+                foreach ($categoryItems as $item) {
+                    $lines[] = $this->formatItemLine($item, $currency);
                 }
             }
             $lines[] = '<b>Итого:</b> ' . $this->formatAmount($totalIncome) . " {$currency}";
@@ -251,15 +281,54 @@ class StatsService
             $lines[] = '';
         }
 
-        $sign = $balance >= 0 ? '+' : '';
-        $lines[] = "<b>💰 Баланс:</b> {$sign}" . $this->formatAmount($balance) . " {$currency}";
+        if (!empty($totalWalletBalance)) {
+            $lines[] = '';
+            $lines[] = '<b>💰 Балансы</b>';
+            $balanceSum = 0;
+            foreach ($totalWalletBalance as $wallet => $item) {
+                $amount = $item['amount'];
+                $balanceSum += $amount;
+                $lines[] = "• {$wallet}: " . $this->formatAmount($amount) . " {$currency}";
+            }
+
+            $maxBalanceMessageId = max(array_column($totalWalletBalance, 'message_id'));
+            $adjustments = 0;
+            foreach ($items as $item) {
+                if (($item['message_id'] ?? 0) > $maxBalanceMessageId && $item['type'] !== 'balance') {
+                    $adjustments += ($item['type'] === 'income') ? $item['amount'] : -$item['amount'];
+                }
+            }
+
+            if ($adjustments != 0) {
+                $currentBalance = $balanceSum + $adjustments;
+                $lines[] = '';
+                $lines[] = "<b>Итого остаток:</b> " . $this->formatAmount($currentBalance) . " {$currency}";
+            }
+        }
 
         return implode("\n", $lines);
+    }
+
+    private function calculateWalletBalances(array $balances): array
+    {
+        $walletLatest = [];
+
+        foreach ($balances as $item) {
+            $wallet = $item['wallet'] ?? 'default';
+            $messageId = $item['message_id'] ?? 0;
+
+            if (!isset($walletLatest[$wallet]) || $walletLatest[$wallet]['message_id'] < $messageId) {
+                $walletLatest[$wallet] = $item;
+            }
+        }
+
+        return $walletLatest;
     }
 
     private function getCategoryEmoji(string $category): string
     {
         $key = mb_strtolower($category);
+
         return self::CATEGORY_EMOJI[$key] ?? '📦';
     }
 
@@ -270,6 +339,7 @@ class StatsService
             $category = $item['category'] ?? 'другое';
             $result[$category][] = $item;
         }
+
         return $result;
     }
 
@@ -287,33 +357,6 @@ class StatsService
         }
 
         return $line;
-    }
-
-    private function getAdvice(string $statsText, string $currency, int $planningPeriod): array
-    {
-        try {
-            $prompt = $this->config->get('llm.prompts.advices', '');
-            $prompt = str_replace(
-                ['{currency}', '{planning_period}'],
-                [$currency, $planningPeriod],
-                $prompt
-            );
-
-            $request = ChatRequest::create([
-                Message::system($prompt),
-                Message::user($statsText),
-            ]);
-
-            $response = $this->llmClient->chat($request);
-
-            return [
-                'text' => trim($response->asText()),
-                'tokens' => $response->usage->totalTokens,
-            ];
-        } catch (\Throwable $e) {
-            $this->logger->warning('Advice LLM request failed', ['error' => $e->getMessage()]);
-            return ['text' => '', 'tokens' => 0];
-        }
     }
 
     private function buildSystemPrompt(int $chatId, string $currency, string $categories): string
@@ -341,6 +384,7 @@ class StatsService
         $result = [];
         foreach ($messages as $msg) {
             $result[] = [
+                'id' => $msg['id'],
                 'date' => date('Y-m-d', strtotime($msg['created_at'])),
                 'message' => $msg['raw_text'],
             ];
@@ -358,7 +402,7 @@ class StatsService
 
     private function checkTokenLimit(): void
     {
-        $limit = $this->config->get('llm.daily_token_limit', 100000);
+        $limit = $this->config->get('llm.daily_token_limit', 1000000);
         $used = $this->usageRepo->getDailyUsage();
 
         if ($used >= $limit) {

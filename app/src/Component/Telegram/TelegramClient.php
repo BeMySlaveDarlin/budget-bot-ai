@@ -108,6 +108,35 @@ class TelegramClient
         ]);
     }
 
+    public function splitMessage(string $text, int $limit = 4096): array
+    {
+        if (mb_strlen($text) <= $limit) {
+            return [$text];
+        }
+
+        $lines = explode("\n", $text);
+        $chunks = [];
+        $current = '';
+
+        foreach ($lines as $line) {
+            $candidate = $current === '' ? $line : $current . "\n" . $line;
+            if (mb_strlen($candidate) > $limit) {
+                if ($current !== '') {
+                    $chunks[] = $current;
+                }
+                $current = mb_strlen($line) > $limit ? mb_substr($line, 0, $limit) : $line;
+            } else {
+                $current = $candidate;
+            }
+        }
+
+        if ($current !== '') {
+            $chunks[] = $current;
+        }
+
+        return $chunks;
+    }
+
     private function request(string $method, array $params = []): array
     {
         try {

@@ -57,12 +57,33 @@ class AiCommand implements BotCommandInterface
             return (int) $matches[1];
         }
 
-        return 1;
+        return $this->getCurrentQuarterMonthsBack();
     }
 
     private function removeMonthsFromArgs(string $args): string
     {
         return trim(preg_replace('/\b([1-9]|1[0-2])\b/', '', $args));
+    }
+
+    private function getCurrentQuarterMonthsBack(): int
+    {
+        $currentMonth = (int) date('n');
+
+        return match ($currentMonth) {
+            3 => 1,     // март, начало Q1
+            4 => 2,     // апрель, 2 месяца с начала Q1
+            5 => 3,     // май, 3 месяца с начала Q1
+            6 => 1,     // июнь, начало Q2
+            7 => 2,     // июль, 2 месяца с начала Q2
+            8 => 3,     // август, 3 месяца с начала Q2
+            9 => 1,     // сентябрь, начало Q3
+            10 => 2,    // октябрь, 2 месяца с начала Q3
+            11 => 3,    // ноябрь, 3 месяца с начала Q3
+            12 => 1,    // декабрь, начало Q4
+            1 => 2,     // январь, 2 месяца с начала Q4
+            2 => 3,     // февраль, 3 месяца с начала Q4
+            default => 1
+        };
     }
 
     private function logCommand(CommandContext $ctx, string $response, int $tokens): void

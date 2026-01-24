@@ -76,7 +76,7 @@ class WebhookProcessTask extends AbstractTask
         $lowerText = mb_strtolower($text);
 
         $replyTo = $message['reply_to_message'] ?? null;
-        $deletePatterns = ['del', 'удалить'];
+        $deletePatterns = ['del', 'удалить', 'удали', 'отмена'];
 
         if ($replyTo && in_array($lowerText, $deletePatterns, true)) {
             $this->getService(MessageHandler::class)->handleDelete($chat['id'], $replyTo['message_id']);
@@ -88,7 +88,7 @@ class WebhookProcessTask extends AbstractTask
         if (str_starts_with($text, '/')) {
             $this->handleCommand($text, $chat, $user, $chatTg['id'], $messageId);
         } elseif (in_array($lowerText, $detailsAliases, true) || $this->matchesAny($lowerText, $detailsPhrases)) {
-            $this->handleCommand('/stats 1 v', $chat, $user, $chatTg['id'], $messageId);
+            $this->handleCommand('/stats v', $chat, $user, $chatTg['id'], $messageId);
         } elseif (in_array($lowerText, $statsAliases, true) || $this->matchesAny($lowerText, $statsPhrases)) {
             $this->handleCommand('/stats', $chat, $user, $chatTg['id'], $messageId);
         } else {
@@ -134,12 +134,24 @@ class WebhookProcessTask extends AbstractTask
         $result = $dispatcher->dispatch($ctx);
 
         if ($result && $result['text']) {
-            if ($pendingMessageId) {
-                $telegram->editMessageText($chatTgId, $pendingMessageId, $result['text']);
-            } elseif (!empty($result['keyboard'])) {
-                $telegram->sendMessageWithKeyboard($chatTgId, $result['text'], $result['keyboard']);
+            $chunks = $telegram->splitMessage($result['text']);
+
+            if (count($chunks) === 1) {
+                if ($pendingMessageId) {
+                    $telegram->editMessageText($chatTgId, $pendingMessageId, $chunks[0]);
+                } elseif (!empty($result['keyboard'])) {
+                    $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard']);
+                } else {
+                    $telegram->sendMessage($chatTgId, $chunks[0]);
+                }
             } else {
-                $telegram->sendMessage($chatTgId, $result['text']);
+                foreach ($chunks as $i => $chunk) {
+                    if ($i === 0 && $pendingMessageId) {
+                        $telegram->editMessageText($chatTgId, $pendingMessageId, $chunk);
+                    } else {
+                        $telegram->sendMessage($chatTgId, $chunk);
+                    }
+                }
             }
         }
     }

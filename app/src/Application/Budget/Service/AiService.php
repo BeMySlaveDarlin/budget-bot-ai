@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Application\Budget\Service;
 
-use App\Component\Telegram\Repository\MessageRepository;
-use App\Service\Settings\Repository\ChatPromptRepository;
 use App\Component\LLM\Client\Contract\LLMClientInterface;
 use App\Component\LLM\DTO\ChatRequest;
 use App\Component\LLM\DTO\Message;
 use App\Component\LLM\Exception\TokenLimitExceededException;
 use App\Component\LLM\LLMClientFactory;
 use App\Component\LLM\Repository\LlmUsageRepository;
+use App\Component\Telegram\Repository\MessageRepository;
 use App\Service\Config\Config;
+use App\Service\Settings\Repository\ChatPromptRepository;
 use DI\Attribute\Injectable;
 use Psr\Log\LoggerInterface;
 
@@ -108,7 +108,7 @@ class AiService
 
     private function checkTokenLimit(): void
     {
-        $limit = $this->config->get('llm.daily_token_limit', 100000);
+        $limit = $this->config->get('llm.daily_token_limit', 1000000);
         $used = $this->usageRepo->getDailyUsage();
 
         if ($used >= $limit) {
