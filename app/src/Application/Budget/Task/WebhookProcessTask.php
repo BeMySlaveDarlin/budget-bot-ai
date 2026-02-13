@@ -138,7 +138,12 @@ class WebhookProcessTask extends AbstractTask
 
             if (count($chunks) === 1) {
                 if ($pendingMessageId) {
-                    $telegram->editMessageText($chatTgId, $pendingMessageId, $chunks[0]);
+                    if (!empty($result['keyboard'])) {
+                        $telegram->deleteMessage($chatTgId, $pendingMessageId);
+                        $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard']);
+                    } else {
+                        $telegram->editMessageText($chatTgId, $pendingMessageId, $chunks[0]);
+                    }
                 } elseif (!empty($result['keyboard'])) {
                     $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard']);
                 } else {

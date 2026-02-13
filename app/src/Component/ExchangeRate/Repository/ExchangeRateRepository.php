@@ -18,9 +18,9 @@ class ExchangeRateRepository
     public function upsert(string $currencyFrom, string $currencyTo, float $rate, string $source = 'exchangerate-api'): int
     {
         return $this->db->insert(
-            "INSERT INTO exchange_rates (currency_from, currency_to, rate, source, fetched_at)
-             VALUES (?, ?, ?, ?, NOW())
-             ON CONFLICT (currency_from, currency_to) DO UPDATE
+            "INSERT INTO exchange_rates (currency_from, currency_to, rate, source, fetched_at, rate_date)
+             VALUES (?, ?, ?, ?, NOW(), CURRENT_DATE)
+             ON CONFLICT (currency_from, currency_to, rate_date) DO UPDATE
              SET rate = EXCLUDED.rate, source = EXCLUDED.source, fetched_at = NOW()",
             [$currencyFrom, $currencyTo, $rate, $source]
         );
@@ -29,8 +29,22 @@ class ExchangeRateRepository
     public function getRate(string $currencyFrom, string $currencyTo = 'THB'): ?float
     {
         $result = $this->db->queryFirst(
-            "SELECT rate FROM exchange_rates WHERE currency_from = ? AND currency_to = ?",
+            "SELECT rate FROM exchange_rates
+             WHERE currency_from = ? AND currency_to = ?
+             ORDER BY rate_date DESC LIMIT 1",
             [$currencyFrom, $currencyTo]
+        );
+
+        return $result ? (float) $result['rate'] : null;
+    }
+
+    public function getRateForDate(string $currencyFrom, string $currencyTo, string $date): ?float
+    {
+        $result = $this->db->queryFirst(
+            "SELECT rate FROM exchange_rates
+             WHERE currency_from = ? AND currency_to = ? AND rate_date <= ?
+             ORDER BY rate_date DESC LIMIT 1",
+            [$currencyFrom, $currencyTo, $date]
         );
 
         return $result ? (float) $result['rate'] : null;
@@ -39,7 +53,9 @@ class ExchangeRateRepository
     public function getAllRates(string $currencyTo = 'THB'): array
     {
         return $this->db->query(
-            "SELECT currency_from, rate, fetched_at FROM exchange_rates WHERE currency_to = ? ORDER BY currency_from",
+            "SELECT DISTINCT ON (currency_from) currency_from, rate, fetched_at
+             FROM exchange_rates WHERE currency_to = ?
+             ORDER BY currency_from, rate_date DESC",
             [$currencyTo]
         );
     }

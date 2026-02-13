@@ -8,6 +8,7 @@ use App\Service\Swoole\Task\Contract\TaskInterface;
 use DI\Attribute\Injectable;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Swoole\Coroutine;
 use Swoole\Http\Server;
 
 #[Injectable]
@@ -36,7 +37,7 @@ class TaskManager
             'created_at' => time(),
         ];
 
-        $swooleTaskId = $this->server->task($taskData);
+        $swooleTaskId = @$this->server->task($taskData);
 
         if ($swooleTaskId !== false) {
             $this->logger->info('[TaskManager] Task dispatched', [
@@ -45,6 +46,22 @@ class TaskManager
                 'type' => $taskClass,
                 'context_type' => $contextType,
                 'context_id' => $contextId,
+            ]);
+        } elseif (Coroutine::getCid() >= 0) {
+            Coroutine::create(function () use ($taskId, $taskClass, $payload) {
+                try {
+                    $this->execute($taskId, $taskClass, $payload);
+                } catch (\Throwable $e) {
+                    $this->logger->error('[TaskManager] Inline task failed', [
+                        'task_db_id' => $taskId,
+                        'type' => $taskClass,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            });
+            $this->logger->info('[TaskManager] Task dispatched inline (coroutine)', [
+                'task_db_id' => $taskId,
+                'type' => $taskClass,
             ]);
         } else {
             $this->taskRepository->markFailed($taskId, 'Failed to dispatch to Swoole');
@@ -93,7 +110,6 @@ class TaskManager
             }
 
             return is_array($result) ? $result : ['result' => $result];
-
         } catch (\Throwable $e) {
             return $this->handleTaskError($taskDbId, $taskClass, $payload, $e);
         }
@@ -110,6 +126,7 @@ class TaskManager
 
         if ($retryCount >= $task['max_retries']) {
             $this->taskRepository->markFailed($taskDbId, "Max retries ({$task['max_retries']}) exceeded");
+
             return false;
         }
 
@@ -137,6 +154,7 @@ class TaskManager
         }
 
         $this->taskRepository->updateStatus($taskDbId, 'cancelled');
+
         return true;
     }
 
@@ -161,10 +179,12 @@ class TaskManager
 
         if ($retryCount < $maxRetries) {
             $this->retry($taskDbId);
+
             return ['status' => 'retrying', 'error' => $e->getMessage()];
         }
 
         $this->taskRepository->markFailed($taskDbId, $e->getMessage());
+
         return ['status' => 'failed', 'error' => $e->getMessage()];
     }
 

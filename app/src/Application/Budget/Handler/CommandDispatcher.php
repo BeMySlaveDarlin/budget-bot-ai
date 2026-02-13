@@ -12,6 +12,7 @@ use App\Application\Budget\Command\SettingsCommand;
 use App\Application\Budget\Command\StartCommand;
 use App\Application\Budget\Command\StatsCommand;
 use App\Application\Budget\Command\StatusCommand;
+use App\Application\Budget\Command\ViewCommand;
 use App\Application\Budget\DTO\CommandContext;
 use App\Component\Telegram\Repository\ChatUserRepository;
 use App\Service\Settings\Repository\SettingsRepository;
@@ -126,6 +127,7 @@ class CommandDispatcher
             StatusCommand::class,
             RateCommand::class,
             SettingsCommand::class,
+            ViewCommand::class,
         ];
 
         foreach ($commandClasses as $class) {
@@ -147,6 +149,13 @@ class CommandDispatcher
                 'showPending' => $attr->showPending,
                 'pendingMessage' => $attr->pendingMessage,
             ];
+        }
+
+        $aliases = ['v' => 'view', 'app' => 'view'];
+        foreach ($aliases as $alias => $target) {
+            if (isset($this->commands[$target])) {
+                $this->commands[$alias] = $this->commands[$target];
+            }
         }
     }
 }

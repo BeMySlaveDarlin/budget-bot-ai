@@ -108,6 +108,14 @@ class TelegramClient
         ]);
     }
 
+    public function deleteMessage(int|string $chatId, int $messageId): array
+    {
+        return $this->request('deleteMessage', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+        ]);
+    }
+
     public function splitMessage(string $text, int $limit = 4096): array
     {
         if (mb_strlen($text) <= $limit) {

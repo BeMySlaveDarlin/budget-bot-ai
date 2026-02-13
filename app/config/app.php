@@ -9,4 +9,5 @@ return [
     'timezone' => $_ENV['TIMEZONE'] ?? 'Asia/Bangkok',
     'base_currency' => 'USD',
     'default_currency' => $_ENV['DEFAULT_CURRENCY'] ?? 'THB',
+    'url' => $_ENV['APP_URL'] ?? '',
 ];
