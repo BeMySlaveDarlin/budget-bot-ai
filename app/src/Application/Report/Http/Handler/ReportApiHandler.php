@@ -11,6 +11,7 @@ use App\Application\Report\Service\ReportService;
 use App\Service\Attribute\Route;
 use App\Service\Http\Context\Request\Request;
 use App\Service\Http\Context\Response\Response;
+use App\Service\Task\TaskManager;
 
 final class ReportApiHandler
 {
@@ -18,6 +19,7 @@ final class ReportApiHandler
         private ReportService $reportService,
         private ReportRepository $reportRepository,
         private TelegramWebAppAuth $auth,
+        private TaskManager $taskManager,
     ) {}
 
     #[Route('/api/report/summary', 'GET')]
@@ -115,7 +117,8 @@ final class ReportApiHandler
             return;
         }
 
-        $response->json($this->reportService->getWalletBalances($chatId));
+        $topicId = $request->getQueryParam('topic_id') !== null ? (int) $request->getQueryParam('topic_id') : null;
+        $response->json($this->reportService->getWalletBalances($chatId, $topicId));
     }
 
     #[Route('/api/report/comparison', 'GET')]
@@ -204,6 +207,7 @@ final class ReportApiHandler
         }
 
         $userId = (int) ($user['id'] ?? 0);
+        $topicId = $request->getQueryParam('topic_id') !== null ? (int) $request->getQueryParam('topic_id') : null;
 
         $id = $this->reportRepository->createTransaction($chatId, $userId, [
             'type' => $body['type'],
@@ -212,7 +216,7 @@ final class ReportApiHandler
             'category' => $body['category'] ?? '',
             'description' => $body['description'] ?? '',
             'wallet' => $body['wallet'] ?? null,
-        ]);
+        ], $topicId);
 
         $response->json(['id' => $id, 'success' => true]);
     }
@@ -289,9 +293,41 @@ final class ReportApiHandler
             return;
         }
 
+        $topicId = $request->getQueryParam('topic_id') !== null ? (int) $request->getQueryParam('topic_id') : null;
         $response->json([
-            'categories' => $this->reportRepository->getDistinctCategories($chatId),
-            'wallets' => $this->reportRepository->getDistinctWallets($chatId),
+            'categories' => $this->reportRepository->getDistinctCategories($chatId, $topicId),
+            'wallets' => $this->reportRepository->getDistinctWallets($chatId, $topicId),
+        ]);
+    }
+
+    #[Route('/api/report/task-status', 'GET')]
+    public function taskStatus(Request $request, Response $response): void
+    {
+        $user = $this->auth->validate($request);
+        if (!$user) {
+            $response->json(['error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $taskId = (int) $request->getQueryParam('task_id', 0);
+        if ($taskId === 0) {
+            $response->json(['error' => 'task_id required'], 400);
+            return;
+        }
+
+        $task = $this->taskManager->getStatus($taskId);
+        if (!$task) {
+            $response->json(['error' => 'Task not found'], 404);
+            return;
+        }
+
+        $response->json([
+            'task_id' => $task['id'],
+            'status' => $task['status'],
+            'error' => $task['error_message'] ?? null,
+            'created_at' => $task['created_at'] ?? null,
+            'started_at' => $task['started_at'] ?? null,
+            'completed_at' => $task['completed_at'] ?? null,
         ]);
     }
 

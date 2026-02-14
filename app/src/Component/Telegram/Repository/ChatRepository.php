@@ -24,7 +24,7 @@ class ChatRepository
 
         if ($chat) {
             $chat['settings'] = json_decode($chat['settings'] ?? '{}', true) ?: ['mode' => 'shared'];
-        }
+}
 
         return $chat;
     }
@@ -55,7 +55,7 @@ class ChatRepository
         return $this->findByTelegramChatId($chat['id']) ?? [
             'id' => 0,
             'settings' => ['mode' => 'shared'],
-        ];
+];
     }
 
     public function updateSettings(int $id, array $settings): void
@@ -169,4 +169,5 @@ class ChatRepository
         $settings['planning_period'] = $months;
         $this->updateSettings($id, $settings);
     }
+
 }

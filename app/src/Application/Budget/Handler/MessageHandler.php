@@ -15,13 +15,13 @@ class MessageHandler
     ) {
     }
 
-    public function handle(int $chatId, int $userId, int $messageId, string $text): void
+    public function handle(int $chatId, int $userId, int $messageId, string $text, ?int $topicId = null): void
     {
         if (!preg_match('/\d/', $text)) {
             return;
         }
 
-        $this->messageRepo->create($chatId, $userId, $messageId, $text);
+        $this->messageRepo->create($chatId, $userId, $messageId, $text, $topicId);
     }
 
     public function handleEdit(int $chatId, int $telegramMessageId, string $text): void

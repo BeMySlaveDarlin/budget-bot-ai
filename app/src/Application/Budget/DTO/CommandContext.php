@@ -14,7 +14,8 @@ readonly class CommandContext
         public int $telegramChatId,
         public int $messageId,
         public bool $isAdmin = false,
-        public bool $isEnabled = true
+        public bool $isEnabled = true,
+        public ?int $topicId = null
     ) {
     }
 
@@ -31,6 +32,11 @@ readonly class CommandContext
     public function getTelegramUserId(): int
     {
         return (int) ($this->user['telegram_id'] ?? 0);
+    }
+
+    public function getTopicId(): ?int
+    {
+        return $this->topicId;
     }
 
     public function getCurrency(): string

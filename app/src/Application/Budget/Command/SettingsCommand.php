@@ -67,12 +67,13 @@ class SettingsCommand implements BotCommandInterface
 
     private function showSettings(CommandContext $ctx): string
     {
+        $chatId = $ctx->getChatId();
         $currency = $ctx->getCurrency();
-        $billingDay = $this->chatRepo->getBillingDay($ctx->getChatId());
-        $planningPeriod = $this->chatRepo->getPlanningPeriod($ctx->getChatId());
-        $categories = $this->chatRepo->getCategories($ctx->getChatId())
+        $billingDay = $this->chatRepo->getBillingDay($chatId);
+        $planningPeriod = $this->chatRepo->getPlanningPeriod($chatId);
+        $categories = $this->chatRepo->getCategories($chatId)
             ?? $this->config->get('llm.default_categories');
-        $prompts = $this->promptRepo->getAllForChat($ctx->getChatId());
+        $prompts = $this->promptRepo->getAllForChat($chatId, $ctx->getTopicId());
         $promptMap = array_column($prompts, 'prompt_text', 'prompt_type');
 
         $text = "<b>⚙️ Настройки чата</b>\n\n";
@@ -144,12 +145,14 @@ class SettingsCommand implements BotCommandInterface
             return $this->showPrompt($ctx, $type);
         }
 
+        $topicId = $ctx->getTopicId();
+
         if ($text === 'reset') {
-            $this->promptRepo->deletePrompt($ctx->getChatId(), $type);
+            $this->promptRepo->deletePrompt($ctx->getChatId(), $type, $topicId);
             return "✅ Промпт <b>{$type}</b> сброшен на default";
         }
 
-        $this->promptRepo->setPrompt($ctx->getChatId(), $type, $text);
+        $this->promptRepo->setPrompt($ctx->getChatId(), $type, $text, $topicId);
         $preview = mb_strlen($text) > 100 ? mb_substr($text, 0, 100) . '...' : $text;
 
         return "✅ Промпт <b>{$type}</b> установлен:\n\n<code>{$preview}</code>";
@@ -157,7 +160,7 @@ class SettingsCommand implements BotCommandInterface
 
     private function showPrompt(CommandContext $ctx, string $type): string
     {
-        $custom = $this->promptRepo->getPrompt($ctx->getChatId(), $type);
+        $custom = $this->promptRepo->getPrompt($ctx->getChatId(), $type, $ctx->getTopicId());
 
         if ($custom) {
             return "<b>Промпт {$type} (кастомный):</b>\n\n<code>{$custom}</code>\n\n" .

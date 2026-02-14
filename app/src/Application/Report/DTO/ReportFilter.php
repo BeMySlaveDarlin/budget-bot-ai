@@ -11,10 +11,9 @@ final readonly class ReportFilter
         public string $currency = 'THB',
         public ?string $type = null,
         public ?string $category = null,
-        public int $page = 1,
-        public int $perPage = 50,
         public ?string $from = null,
         public ?string $to = null,
+        public ?int $topicId = null,
     ) {}
 
     public static function fromQueryParams(array $params): self
@@ -34,10 +33,9 @@ final readonly class ReportFilter
             currency: strtoupper((string) ($params['currency'] ?? 'THB')),
             type: isset($params['type']) ? (string) $params['type'] : null,
             category: isset($params['category']) ? (string) $params['category'] : null,
-            page: max(1, (int) ($params['page'] ?? 1)),
-            perPage: max(1, min(100, (int) ($params['per_page'] ?? 50))),
             from: $from,
             to: $to,
+            topicId: isset($params['topic_id']) ? (int) $params['topic_id'] : null,
         );
     }
 }

@@ -32,12 +32,12 @@ class AiService
         $this->llmClient = $this->llmFactory->createByCode($this->config->get('llm.default_provider', 'claude'));
     }
 
-    public function ask(int $chatId, string $question, int $months, string $currency = 'THB'): array
+    public function ask(int $chatId, string $question, int $months, string $currency = 'THB', ?int $topicId = null): array
     {
         $this->checkTokenLimit();
 
-        $messages = $this->messageRepo->getForChat($chatId, $months);
-        $systemPrompt = $this->buildSystemPrompt($chatId, $currency);
+        $messages = $this->messageRepo->getForChat($chatId, $months, 1, $topicId);
+        $systemPrompt = $this->buildSystemPrompt($chatId, $currency, $topicId);
         $context = $this->formatMessagesAsJson($messages);
 
         $userContent = json_encode([
@@ -78,11 +78,10 @@ class AiService
         }
     }
 
-    private function buildSystemPrompt(int $chatId, string $currency): string
+    private function buildSystemPrompt(int $chatId, string $currency, ?int $topicId = null): string
     {
         $globalPrompt = $this->config->get('llm.prompts.system', '');
-
-        $customPrompt = $this->promptRepo->getPrompt($chatId, 'ai');
+        $customPrompt = $this->promptRepo->getPrompt($chatId, 'ai', $topicId);
         $taskPrompt = $customPrompt ?: $this->config->get('llm.prompts.ai_assistant', '');
         $taskPrompt = str_replace('{currency}', $currency, $taskPrompt);
 

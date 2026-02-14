@@ -28,13 +28,17 @@ class TelegramClient
         ]);
     }
 
-    public function sendMessage(int|string $chatId, string $text, ?string $parseMode = 'HTML'): array
+    public function sendMessage(int|string $chatId, string $text, ?string $parseMode = 'HTML', ?int $messageThreadId = null): array
     {
-        return $this->request('sendMessage', [
+        $params = [
             'chat_id' => $chatId,
             'text' => $text,
             'parse_mode' => $parseMode,
-        ]);
+        ];
+        if ($messageThreadId !== null) {
+            $params['message_thread_id'] = $messageThreadId;
+        }
+        return $this->request('sendMessage', $params);
     }
 
     public function setWebhook(string $url, ?string $secretToken = null): array
@@ -96,16 +100,21 @@ class TelegramClient
         int|string $chatId,
         string $text,
         array $keyboard,
-        ?string $parseMode = 'HTML'
+        ?string $parseMode = 'HTML',
+        ?int $messageThreadId = null
     ): array {
         $replyMarkup = isset($keyboard['inline_keyboard']) ? $keyboard : ['inline_keyboard' => $keyboard];
 
-        return $this->request('sendMessage', [
+        $params = [
             'chat_id' => $chatId,
             'text' => $text,
             'parse_mode' => $parseMode,
             'reply_markup' => json_encode($replyMarkup),
-        ]);
+        ];
+        if ($messageThreadId !== null) {
+            $params['message_thread_id'] = $messageThreadId;
+        }
+        return $this->request('sendMessage', $params);
     }
 
     public function deleteMessage(int|string $chatId, int $messageId): array

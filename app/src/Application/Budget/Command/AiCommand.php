@@ -34,7 +34,7 @@ class AiCommand implements BotCommandInterface
         $currency = $ctx->getCurrency();
 
         try {
-            $result = $this->aiService->ask($ctx->getChatId(), $question, $months, $currency);
+            $result = $this->aiService->ask($ctx->getChatId(), $question, $months, $currency, $ctx->getTopicId());
         } catch (TokenLimitExceededException $e) {
             return "⚠️ Дневной лимит токенов исчерпан ({$e->used}/{$e->limit}). Попробуй завтра.";
         }
@@ -97,7 +97,8 @@ class AiCommand implements BotCommandInterface
             $ctx->args,
             $response,
             $inputTokens,
-            $outputTokens
+            $outputTokens,
+            $ctx->getTopicId()
         );
     }
 }

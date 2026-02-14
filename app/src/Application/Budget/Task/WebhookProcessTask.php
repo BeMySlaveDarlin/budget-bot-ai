@@ -36,7 +36,9 @@ class WebhookProcessTask extends AbstractTask
         $updateRepo->create($updateId, $type, $update);
 
         if (isset($update['callback_query'])) {
-            $this->getService(CallbackHandler::class)->handle($update['callback_query']);
+            $callback = $update['callback_query'];
+            $callbackTopicId = $callback['message']['message_thread_id'] ?? null;
+            $this->getService(CallbackHandler::class)->handle($callback, $callbackTopicId);
             $updateRepo->markProcessed($updateId);
 
             return ['status' => 'ok', 'type' => 'callback'];
@@ -58,6 +60,7 @@ class WebhookProcessTask extends AbstractTask
         $chatTg = $message['chat'];
         $fromTg = $message['from'] ?? [];
         $messageId = $message['message_id'];
+        $topicId = $message['message_thread_id'] ?? null;
 
         $userRepo = $this->getService(UserRepository::class);
         $chatRepo = $this->getService(ChatRepository::class);
@@ -73,6 +76,7 @@ class WebhookProcessTask extends AbstractTask
         $statsPhrases = ['сколько потратил', 'что по деньгам', 'как с бюджетом', 'покажи расходы', 'покажи статистику'];
         $detailsAliases = ['детали', 'детально', 'подробно', 'расклад', 'отчет', 'отчёт'];
         $detailsPhrases = ['полный отчет', 'подробный отчет', 'подробный отчёт', 'все расходы', 'покажи всё'];
+        $viewAliases = ['сайт', 'ссылка', 'апп'];
         $lowerText = mb_strtolower($text);
 
         $replyTo = $message['reply_to_message'] ?? null;
@@ -86,13 +90,15 @@ class WebhookProcessTask extends AbstractTask
         }
 
         if (str_starts_with($text, '/')) {
-            $this->handleCommand($text, $chat, $user, $chatTg['id'], $messageId);
+            $this->handleCommand($text, $chat, $user, $chatTg['id'], $messageId, $topicId);
+        } elseif (in_array($lowerText, $viewAliases, true)) {
+            $this->handleCommand('/view', $chat, $user, $chatTg['id'], $messageId, $topicId);
         } elseif (in_array($lowerText, $detailsAliases, true) || $this->matchesAny($lowerText, $detailsPhrases)) {
-            $this->handleCommand('/stats v', $chat, $user, $chatTg['id'], $messageId);
+            $this->handleCommand('/stats v', $chat, $user, $chatTg['id'], $messageId, $topicId);
         } elseif (in_array($lowerText, $statsAliases, true) || $this->matchesAny($lowerText, $statsPhrases)) {
-            $this->handleCommand('/stats', $chat, $user, $chatTg['id'], $messageId);
+            $this->handleCommand('/stats', $chat, $user, $chatTg['id'], $messageId, $topicId);
         } else {
-            $this->getService(MessageHandler::class)->handle($chat['id'], $user['id'], $messageId, $text);
+            $this->getService(MessageHandler::class)->handle($chat['id'], $user['id'], $messageId, $text, $topicId);
         }
 
         $updateRepo->markProcessed($updateId);
@@ -100,7 +106,7 @@ class WebhookProcessTask extends AbstractTask
         return ['status' => 'ok', 'type' => 'message'];
     }
 
-    private function handleCommand(string $text, array $chat, array $user, int $chatTgId, int $messageId): void
+    private function handleCommand(string $text, array $chat, array $user, int $chatTgId, int $messageId, ?int $topicId = null): void
     {
         $parts = preg_split('/\s+/', trim($text), 2);
         $command = strtolower($parts[0]);
@@ -117,7 +123,8 @@ class WebhookProcessTask extends AbstractTask
             telegramChatId: $chatTgId,
             messageId: $messageId,
             isAdmin: $isAdmin,
-            isEnabled: (bool) ($user['enabled'] ?? false)
+            isEnabled: (bool) ($user['enabled'] ?? false),
+            topicId: $topicId
         );
 
         $dispatcher = $this->getService(CommandDispatcher::class);
@@ -127,7 +134,7 @@ class WebhookProcessTask extends AbstractTask
         $pendingMessageId = null;
 
         if ($meta && $meta['showPending']) {
-            $response = $telegram->sendMessage($chatTgId, $meta['pendingMessage']);
+            $response = $telegram->sendMessage($chatTgId, $meta['pendingMessage'], messageThreadId: $topicId);
             $pendingMessageId = $response['result']['message_id'] ?? null;
         }
 
@@ -140,21 +147,21 @@ class WebhookProcessTask extends AbstractTask
                 if ($pendingMessageId) {
                     if (!empty($result['keyboard'])) {
                         $telegram->deleteMessage($chatTgId, $pendingMessageId);
-                        $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard']);
+                        $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard'], messageThreadId: $topicId);
                     } else {
                         $telegram->editMessageText($chatTgId, $pendingMessageId, $chunks[0]);
                     }
                 } elseif (!empty($result['keyboard'])) {
-                    $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard']);
+                    $telegram->sendMessageWithKeyboard($chatTgId, $chunks[0], $result['keyboard'], messageThreadId: $topicId);
                 } else {
-                    $telegram->sendMessage($chatTgId, $chunks[0]);
+                    $telegram->sendMessage($chatTgId, $chunks[0], messageThreadId: $topicId);
                 }
             } else {
                 foreach ($chunks as $i => $chunk) {
                     if ($i === 0 && $pendingMessageId) {
                         $telegram->editMessageText($chatTgId, $pendingMessageId, $chunk);
                     } else {
-                        $telegram->sendMessage($chatTgId, $chunk);
+                        $telegram->sendMessage($chatTgId, $chunk, messageThreadId: $topicId);
                     }
                 }
             }

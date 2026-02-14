@@ -12,6 +12,7 @@ use App\Component\ExchangeRate\ExchangeRateService;
 use App\Component\Telegram\Repository\ChatRepository;
 use App\Service\Task\TaskManager;
 use DI\Attribute\Injectable;
+use Psr\Log\LoggerInterface;
 
 #[Injectable]
 final class ReportService
@@ -21,12 +22,13 @@ final class ReportService
         private ChatRepository $chatRepository,
         private ExchangeRateService $exchangeRateService,
         private TaskManager $taskManager,
+        private LoggerInterface $logger,
     ) {}
 
     public function getSummary(int $chatId, ReportFilter $filter): array
     {
         $period = $this->getPeriod($chatId, $filter);
-        $rows = $this->reportRepository->getSummary($chatId, $period->from, $period->to);
+        $rows = $this->reportRepository->getSummary($chatId, $period->from, $period->to, $filter->topicId);
 
         $aggregated = [];
         foreach ($rows as $row) {
@@ -55,14 +57,14 @@ final class ReportService
             'period' => ['from' => $period->from, 'to' => $period->to],
             'currency' => $filter->currency,
             'items' => $result,
-            'remainder' => $this->getRemainder($chatId, $filter->currency),
+            'remainder' => $this->getRemainder($chatId, $filter->currency, $filter->topicId),
         ];
     }
 
     public function getCategoryBreakdown(int $chatId, ReportFilter $filter): array
     {
         $period = $this->getPeriod($chatId, $filter);
-        $rows = $this->reportRepository->getCategoryBreakdown($chatId, $period->from, $period->to, $filter->type);
+        $rows = $this->reportRepository->getCategoryBreakdown($chatId, $period->from, $period->to, $filter->type, $filter->topicId);
 
         $aggregated = [];
         foreach ($rows as $row) {
@@ -100,7 +102,6 @@ final class ReportService
     public function getTransactions(int $chatId, ReportFilter $filter): array
     {
         $period = $this->getPeriod($chatId, $filter);
-        $offset = ($filter->page - 1) * $filter->perPage;
 
         $rows = $this->reportRepository->getTransactions(
             $chatId,
@@ -108,11 +109,8 @@ final class ReportService
             $period->to,
             $filter->type,
             $filter->category,
-            $filter->perPage,
-            $offset
+            $filter->topicId
         );
-
-        $totalCount = (int) ($rows[0]['total_count'] ?? 0);
 
         $items = [];
         foreach ($rows as $row) {
@@ -137,19 +135,13 @@ final class ReportService
             'period' => ['from' => $period->from, 'to' => $period->to],
             'currency' => $filter->currency,
             'items' => $items,
-            'pagination' => [
-                'page' => $filter->page,
-                'per_page' => $filter->perPage,
-                'total' => $totalCount,
-                'pages' => $totalCount > 0 ? (int) ceil($totalCount / $filter->perPage) : 0,
-            ],
         ];
     }
 
     public function getMonthlyTrends(int $chatId, ReportFilter $filter): array
     {
         $period = $this->getPeriod($chatId, $filter);
-        $rows = $this->reportRepository->getMonthlyTrends($chatId, $period->from, $period->to);
+        $rows = $this->reportRepository->getMonthlyTrends($chatId, $period->from, $period->to, $filter->topicId);
 
         $aggregated = [];
         foreach ($rows as $row) {
@@ -184,9 +176,9 @@ final class ReportService
         ];
     }
 
-    public function getWalletBalances(int $chatId): array
+    public function getWalletBalances(int $chatId, ?int $topicId = null): array
     {
-        return $this->reportRepository->getWalletBalances($chatId);
+        return $this->reportRepository->getWalletBalances($chatId, $topicId);
     }
 
     public function getComparison(int $chatId, ReportFilter $current, ?int $previousOffsetMonths = null): array
@@ -196,7 +188,7 @@ final class ReportService
         $offsetMonths = $previousOffsetMonths ?? $current->months;
         $billingDay = $this->chatRepository->getBillingDay($chatId);
         $previousPeriod = PeriodRange::fromBillingDay($current->months, $billingDay, $offsetMonths);
-        $previousRows = $this->reportRepository->getSummary($chatId, $previousPeriod->from, $previousPeriod->to);
+        $previousRows = $this->reportRepository->getSummary($chatId, $previousPeriod->from, $previousPeriod->to, $current->topicId);
 
         $previousData = [];
         foreach ($previousRows as $row) {
@@ -233,7 +225,7 @@ final class ReportService
     public function exportCsv(int $chatId, ReportFilter $filter): string
     {
         $period = $this->getPeriod($chatId, $filter);
-        $rows = $this->reportRepository->getTransactionsForExport($chatId, $period->from, $period->to);
+        $rows = $this->reportRepository->getTransactionsForExport($chatId, $period->from, $period->to, $filter->topicId);
 
         $lines = ["type,category,amount,currency,description,wallet,date"];
 
@@ -257,41 +249,65 @@ final class ReportService
     public function refreshCategorization(int $chatId, ReportFilter $filter): array
     {
         $period = $this->getPeriod($chatId, $filter);
-        $cleared = $this->reportRepository->clearCategorization($chatId, $period->from, $period->to);
 
-        $this->taskManager->dispatch(
+        $this->logger->info('[ReportService] refreshCategorization START', [
+            'chat_id' => $chatId,
+            'months' => $filter->months,
+            'currency' => $filter->currency,
+            'topic_id' => $filter->topicId,
+            'period_from' => $period->from,
+            'period_to' => $period->to,
+        ]);
+
+        $cleared = $this->reportRepository->clearCategorization($chatId, $period->from, $period->to, $filter->topicId);
+
+        $this->logger->info('[ReportService] Categorization cleared', [
+            'chat_id' => $chatId,
+            'cleared_count' => $cleared,
+        ]);
+
+        $taskId = $this->taskManager->dispatch(
             CategorizationTask::class,
             [
                 'chat_id' => $chatId,
                 'months' => $filter->months,
                 'currency' => $filter->currency,
+                'topic_id' => $filter->topicId,
             ],
             $chatId,
             'report_refresh'
         );
 
+        $this->logger->info('[ReportService] CategorizationTask dispatched', [
+            'chat_id' => $chatId,
+            'task_id' => $taskId,
+        ]);
+
         return [
             'cleared' => $cleared,
             'status' => 'processing',
+            'task_id' => $taskId,
         ];
     }
 
-    public function getRemainder(int $chatId, string $currency): ?array
+    public function getRemainder(int $chatId, string $currency, ?int $topicId = null): ?array
     {
-        $balances = $this->reportRepository->getLatestBalances($chatId);
+        $balances = $this->reportRepository->getLatestBalances($chatId, $topicId);
 
         if (empty($balances)) {
             return null;
         }
 
         $balanceSum = 0.0;
-        $maxId = 0;
+        $maxDate = '';
         foreach ($balances as $balance) {
             $balanceSum += $this->convertCurrency((float) $balance['amount'], $balance['currency'], $currency);
-            $maxId = max($maxId, (int) $balance['message_id']);
+            if ($balance['balance_at'] > $maxDate) {
+                $maxDate = $balance['balance_at'];
+            }
         }
 
-        $transactions = $this->reportRepository->getTransactionsAfterMessage($chatId, $maxId);
+        $transactions = $this->reportRepository->getTransactionsAfterDate($chatId, $maxDate, $topicId);
 
         $adjustments = 0.0;
         foreach ($transactions as $tx) {

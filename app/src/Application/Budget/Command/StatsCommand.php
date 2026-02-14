@@ -11,6 +11,7 @@ use App\Application\Budget\Service\StatsService;
 use App\Component\LLM\Exception\TokenLimitExceededException;
 use App\Service\Console\Repository\CommandLogRepository;
 use DI\Attribute\Injectable;
+use Psr\Log\LoggerInterface;
 
 #[Injectable]
 #[BotCommand(command: 'stats', description: 'Статистика за N месяцев', showPending: true)]
@@ -18,7 +19,8 @@ class StatsCommand implements BotCommandInterface
 {
     public function __construct(
         private StatsService $statsService,
-        private CommandLogRepository $commandLogRepo
+        private CommandLogRepository $commandLogRepo,
+        private LoggerInterface $logger
     ) {
     }
 
@@ -27,11 +29,30 @@ class StatsCommand implements BotCommandInterface
         [$months, $verbose] = $this->parseArgs($ctx->args);
         $currency = $ctx->getCurrency();
 
+        $this->logger->info('[StatsCommand] execute', [
+            'chat_id' => $ctx->getChatId(),
+            'user_id' => $ctx->getUserId(),
+            'months' => $months,
+            'verbose' => $verbose,
+            'currency' => $currency,
+            'topic_id' => $ctx->getTopicId(),
+            'args' => $ctx->args,
+        ]);
+
         try {
-            $result = $this->statsService->getStats($ctx->getChatId(), $months, $currency, $verbose);
+            $result = $this->statsService->getStats($ctx->getChatId(), $months, $currency, $verbose, $ctx->getTopicId());
         } catch (TokenLimitExceededException $e) {
+            $this->logger->warning('[StatsCommand] Token limit exceeded', [
+                'used' => $e->used,
+                'limit' => $e->limit,
+            ]);
             return "⚠️ Дневной лимит токенов исчерпан ({$e->used}/{$e->limit}). Попробуй завтра.";
         }
+
+        $this->logger->info('[StatsCommand] Result', [
+            'tokens' => $result['tokens'],
+            'text_length' => strlen($result['text']),
+        ]);
 
         if ($result['tokens'] > 0) {
             $this->logCommand($ctx, $result['text'], $result['tokens']);
@@ -93,7 +114,8 @@ class StatsCommand implements BotCommandInterface
             $ctx->args,
             $response,
             $inputTokens,
-            $outputTokens
+            $outputTokens,
+            $ctx->getTopicId()
         );
     }
 }

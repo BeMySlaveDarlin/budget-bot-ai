@@ -22,12 +22,13 @@ class CommandLogRepository
         string $params,
         ?string $llmResponse,
         int $inputTokens,
-        int $outputTokens
+        int $outputTokens,
+        ?int $topicId = null
     ): int {
         return $this->db->insert(
-            "INSERT INTO command_logs (chat_id, user_id, command, params, llm_response, input_tokens, output_tokens)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [$chatId, $userId, $command, $params, $llmResponse, $inputTokens, $outputTokens]
+            "INSERT INTO command_logs (chat_id, user_id, command, params, llm_response, input_tokens, output_tokens, topic_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [$chatId, $userId, $command, $params, $llmResponse, $inputTokens, $outputTokens, $topicId]
         );
     }
 

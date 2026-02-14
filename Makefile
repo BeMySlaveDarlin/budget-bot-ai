@@ -66,6 +66,9 @@ webhook-info: ## Get Telegram webhook info
 llm-test: ## Test LLM provider
 	docker compose exec app php bin/cli.php llm:test
 
+migrate-messages: ## Copy messages between chats with topic
+	docker compose exec app php bin/cli.php migrate:messages $(ARGS)
+
 clean: stop ## Stop and remove volumes
 	docker compose down -v --remove-orphans
 

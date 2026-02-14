@@ -81,10 +81,33 @@ class ClaudeClient extends AbstractLLMClient
         $content = null;
         $toolCalls = [];
 
-        foreach ($response['content'] ?? [] as $block) {
+        $this->logger->debug('[Claude:parseResponse] Raw response keys', [
+            'keys' => array_keys($response),
+            'content_blocks' => count($response['content'] ?? []),
+            'stop_reason' => $response['stop_reason'] ?? 'N/A',
+            'model' => $response['model'] ?? 'N/A',
+        ]);
+
+        foreach ($response['content'] ?? [] as $i => $block) {
+            $this->logger->debug('[Claude:parseResponse] Content block', [
+                'index' => $i,
+                'type' => $block['type'] ?? 'unknown',
+                'has_text' => isset($block['text']),
+                'has_input' => isset($block['input']),
+                'tool_name' => $block['name'] ?? null,
+            ]);
+
             if ($block['type'] === 'text') {
                 $content = $block['text'];
             } elseif ($block['type'] === 'tool_use') {
+                $inputItems = $block['input']['items'] ?? [];
+                $this->logger->info('[Claude:parseResponse] tool_use block', [
+                    'tool_id' => $block['id'],
+                    'tool_name' => $block['name'],
+                    'input_keys' => array_keys($block['input'] ?? []),
+                    'items_count' => count($inputItems),
+                ]);
+
                 $toolCalls[] = new ToolCall(
                     $block['id'],
                     $block['name'],

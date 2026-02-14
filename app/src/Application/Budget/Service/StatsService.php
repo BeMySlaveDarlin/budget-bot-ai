@@ -34,7 +34,13 @@ class StatsService
         private Config $config,
         private LoggerInterface $logger
     ) {
-        $this->llmClient = $this->llmFactory->createByCode($this->config->get('llm.default_provider', 'claude'));
+        $provider = $this->config->get('llm.default_provider', 'claude');
+        $this->logger->info('[Stats] Initializing LLM client', ['provider' => $provider]);
+        $this->llmClient = $this->llmFactory->createByCode($provider);
+        $this->logger->info('[Stats] LLM client created', [
+            'provider_code' => $this->llmClient->getProviderCode(),
+            'model' => $this->llmClient->getDefaultModel(),
+        ]);
     }
 
     private const array CATEGORY_EMOJI = [
@@ -59,12 +65,27 @@ class StatsService
         'баланс' => '💰',
     ];
 
-    public function getStats(int $chatId, int $months, string $currency = 'THB', bool $verbose = false): array
+    public function getStats(int $chatId, int $months, string $currency = 'THB', bool $verbose = false, ?int $topicId = null): array
     {
+        $this->logger->info('[Stats] START getStats', [
+            'chat_id' => $chatId,
+            'months' => $months,
+            'currency' => $currency,
+            'verbose' => $verbose,
+            'topic_id' => $topicId,
+        ]);
+
         $billingDay = $this->chatRepo->getBillingDay($chatId);
-        $messages = $this->messageRepo->getForChat($chatId, $months, $billingDay);
+        $messages = $this->messageRepo->getForChat($chatId, $months, $billingDay, $topicId);
+
+        $this->logger->info('[Stats] Messages fetched', [
+            'chat_id' => $chatId,
+            'billing_day' => $billingDay,
+            'total_messages' => count($messages),
+        ]);
 
         if (empty($messages)) {
+            $this->logger->info('[Stats] No messages found, returning empty');
             return [
                 'text' => "Нет записей за последние {$months} мес.",
                 'tokens' => 0,
@@ -84,15 +105,28 @@ class StatsService
             }
         }
 
+        $this->logger->info('[Stats] Messages split', [
+            'cached_items' => count($cached),
+            'uncategorized_messages' => count($uncategorized),
+        ]);
+
         $tokensUsed = 0;
 
         if (!empty($uncategorized)) {
             $this->checkTokenLimit();
+            $this->logger->info('[Stats] Token limit check passed');
 
             $categories = $this->chatRepo->getCategories($chatId) ?? $this->config->get('llm.default_categories');
-            $systemPrompt = $this->buildSystemPrompt($chatId, $currency, $categories);
+            $systemPrompt = $this->buildSystemPrompt($chatId, $currency, $categories, $topicId);
             $context = $this->formatMessagesAsJson($uncategorized);
             $userContent = json_encode(['messages' => $context], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+            $this->logger->info('[Stats] LLM request prepared', [
+                'provider' => $this->llmClient->getProviderCode(),
+                'system_prompt_length' => strlen($systemPrompt),
+                'user_content_length' => strlen($userContent),
+                'messages_to_categorize' => count($context),
+            ]);
 
             try {
                 $tool = $this->buildCategorizationTool();
@@ -101,11 +135,28 @@ class StatsService
                     Message::user($userContent),
                 ]);
 
+                $maxTokens = (int) $this->config->get('llm.providers.claude.max_tokens', 64000);
                 $request
                     ->withTools([$tool])
-                    ->withMaxTokens((int) $this->config->get('llm.providers.claude.max_tokens', 64000));
+                    ->withMaxTokens($maxTokens);
+
+                $this->logger->info('[Stats] Sending LLM request', [
+                    'max_tokens' => $maxTokens,
+                    'has_tools' => true,
+                ]);
 
                 $response = $this->llmClient->chat($request);
+
+                $this->logger->info('[Stats] LLM response received', [
+                    'finish_reason' => $response->finishReason,
+                    'has_tool_calls' => !empty($response->toolCalls),
+                    'tool_calls_count' => count($response->toolCalls),
+                    'has_text_content' => $response->content !== null,
+                    'text_content_preview' => $response->content !== null ? mb_substr($response->content, 0, 200) : null,
+                    'input_tokens' => $response->usage->inputTokens,
+                    'output_tokens' => $response->usage->outputTokens,
+                    'model' => $response->model,
+                ]);
 
                 $this->usageRepo->logUsage(
                     $this->llmClient->getProviderCode(),
@@ -114,15 +165,37 @@ class StatsService
                 );
 
                 $newItems = $this->extractToolData($response);
+
+                $this->logger->info('[Stats] Tool data extracted', [
+                    'items_count' => count($newItems),
+                    'items_preview' => array_slice($newItems, 0, 3),
+                ]);
+
+                if (empty($newItems)) {
+                    $this->logger->warning('[Stats] No items extracted from LLM response', [
+                        'response_content' => $response->content,
+                        'tool_calls_raw' => array_map(fn($tc) => [
+                            'id' => $tc->id,
+                            'name' => $tc->name,
+                            'args_keys' => array_keys($tc->arguments),
+                        ], $response->toolCalls),
+                    ]);
+                }
+
                 $this->messageRepo->updateCategorization($newItems);
+
+                $this->logger->info('[Stats] Categorization saved to DB', [
+                    'items_saved' => count($newItems),
+                ]);
 
                 $cached = array_merge($cached, $newItems);
                 $tokensUsed = $response->usage->totalTokens;
             } catch (\Throwable $e) {
-                $this->logger->error('Stats LLM request failed', [
+                $this->logger->error('[Stats] LLM request FAILED', [
                     'error' => $e->getMessage(),
                     'class' => get_class($e),
                     'chat_id' => $chatId,
+                    'trace' => $e->getTraceAsString(),
                 ]);
 
                 if (empty($cached)) {
@@ -189,19 +262,34 @@ class StatsService
         if (!empty($response->toolCalls)) {
             $items = [];
             foreach ($response->toolCalls as $toolCall) {
+                $this->logger->debug('[Stats:extractToolData] Processing tool_call', [
+                    'tool_id' => $toolCall->id,
+                    'tool_name' => $toolCall->name,
+                    'arguments_keys' => array_keys($toolCall->arguments),
+                    'items_count' => count($toolCall->arguments['items'] ?? []),
+                ]);
                 $callItems = $toolCall->arguments['items'] ?? [];
                 array_push($items, ...$callItems);
             }
+            $this->logger->info('[Stats:extractToolData] Extracted from tool_calls', ['total_items' => count($items)]);
             return $items;
         }
 
         $text = $response->asText();
+        $this->logger->info('[Stats:extractToolData] No tool_calls, trying text fallback', [
+            'has_text' => $text !== null,
+            'text_length' => $text !== null ? strlen($text) : 0,
+        ]);
+
         if ($text && preg_match('/```json\s*(.*?)\s*```/s', $text, $matches)) {
             $json = json_decode($matches[1], true);
+            $items = $json['items'] ?? $json['transactions'] ?? [];
+            $this->logger->info('[Stats:extractToolData] Extracted from JSON in text', ['items_count' => count($items)]);
 
-            return $json['items'] ?? $json['transactions'] ?? [];
+            return $items;
         }
 
+        $this->logger->warning('[Stats:extractToolData] No data extracted at all');
         return [];
     }
 
@@ -359,13 +447,11 @@ class StatsService
         return $line;
     }
 
-    private function buildSystemPrompt(int $chatId, string $currency, string $categories): string
+    private function buildSystemPrompt(int $chatId, string $currency, string $categories, ?int $topicId = null): string
     {
         $globalPrompt = $this->config->get('llm.prompts.system', '');
-
-        $customPrompt = $this->promptRepo->getPrompt($chatId, 'stats');
+        $customPrompt = $this->promptRepo->getPrompt($chatId, 'stats', $topicId);
         $taskPrompt = $customPrompt ?: $this->config->get('llm.prompts.stats', '');
-
         $fullPrompt = $globalPrompt . "\n\n" . $taskPrompt;
 
         return str_replace(

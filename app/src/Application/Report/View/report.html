@@ -67,6 +67,36 @@
             0% { background-position: 200% 0; }
             100% { background-position: -200% 0; }
         }
+
+        .categorization-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: color-mix(in srgb, var(--tg-theme-bg-color) 92%, transparent);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 16px; padding: 24px;
+        }
+        .categorization-overlay .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid var(--tg-theme-secondary-bg-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .categorization-overlay .status-text {
+            font-size: 16px; font-weight: 600;
+            color: var(--tg-theme-text-color);
+            text-align: center;
+        }
+        .categorization-overlay .status-sub {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color);
+            text-align: center;
+        }
+        .categorization-overlay .status-timer {
+            font-size: 24px; font-weight: 700;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -568,6 +598,7 @@ const params = new URLSearchParams(window.location.search);
 const chatId = params.get('chat_id');
 const urlTs = params.get('ts') || '';
 const urlSig = params.get('sig') || '';
+const urlTopicId = params.get('topic_id') || '';
 const urlCurrency = params.get('currency') || 'THB';
 const urlMonths = parseInt(params.get('months')) || 1;
 
@@ -578,11 +609,9 @@ const fmtDateFull = (d) => new Date(d).toLocaleDateString('ru-RU', {day: 'numeri
 let currentTab = 'dashboard';
 let currentMonths = urlMonths;
 let currentCurrency = urlCurrency;
-let txPage = 1;
 let txType = '';
 let txCategory = '';
 let txSearch = '';
-let txTotal = 0;
 let txLoaded = [];
 let txSort = 'amount';
 let txSortDir = 'desc';
@@ -669,6 +698,7 @@ async function api(path, opts = {}) {
     const sep = path.includes('?') ? '&' : '?';
     let url = `${window.location.origin}${path}${sep}chat_id=${chatId}`;
     if (urlTs && urlSig) url += `&ts=${urlTs}&sig=${urlSig}`;
+    if (urlTopicId) url += `&topic_id=${urlTopicId}`;
     const headers = {'X-Telegram-Init-Data': tg.initData || ''};
     if (opts.method && opts.method !== 'GET' && opts.body) headers['Content-Type'] = 'application/json';
     const res = await fetch(url, {...opts, headers: {...headers, ...(opts.headers || {})}});
@@ -948,14 +978,14 @@ document.getElementById('sort-controls').addEventListener('click', (e) => {
 });
 
 async function loadTransactions(reset = false) {
-    if (reset) { txPage = 1; txLoaded = []; }
+    if (reset) { txLoaded = []; }
     renderTypeFilters();
     updateSortButtons();
 
     if (reset) showSection('transactions', 'skeleton');
 
     try {
-        let url = `/api/report/transactions?${periodQuery()}&currency=${currentCurrency}&page=1&per_page=10000`;
+        let url = `/api/report/transactions?${periodQuery()}&currency=${currentCurrency}`;
         if (txType) url += `&type=${txType}`;
         if (txCategory) url += `&category=${encodeURIComponent(txCategory)}`;
         const requests = [api(url)];
@@ -964,7 +994,6 @@ async function loadTransactions(reset = false) {
         }
         const [data, cats] = await Promise.all(requests);
         if (cats) categoriesCache = cats.items || [];
-        txTotal = data.pagination?.total || 0;
         const txs = data.items || [];
 
         if (reset) txLoaded = txs;
@@ -1097,7 +1126,7 @@ async function loadTrends() {
     try {
         const requests = [
             api(`/api/report/trends?${periodQuery()}&currency=${currentCurrency}`),
-            api(`/api/report/transactions?${periodQuery()}&currency=${currentCurrency}&type=expense&per_page=2000`)
+            api(`/api/report/transactions?${periodQuery()}&currency=${currentCurrency}&type=expense`)
         ];
         const needCats = categoriesCache.length === 0;
         if (needCats) requests.push(api(`/api/report/categories?${periodQuery()}&currency=${currentCurrency}&type=expense`));
@@ -1422,47 +1451,93 @@ function renderMore(comparison) {
 }
 
 async function handleRefresh() {
-    if (!confirm('Запустить пере-категоризацию через LLM? Это может занять некоторое время.')) return;
+    if (!confirm('Запустить пере-категоризацию через LLM? Это может занять до 5 минут.')) return;
 
     const btn = document.getElementById('btn-refresh');
     btn.disabled = true;
-    btn.textContent = '⏳ Обновляю данные...';
 
     try {
-        await api(`/api/report/refresh?${periodQuery()}&currency=${currentCurrency}`, {method: 'POST'});
-        setTimeout(() => startRefreshPolling(btn), 5000);
+        const result = await api(`/api/report/refresh?${periodQuery()}&currency=${currentCurrency}`, {method: 'POST'});
+        const taskId = result.task_id;
+        if (!taskId) {
+            btn.disabled = false;
+            showToast('Ошибка: task_id не получен');
+            return;
+        }
+        showCategorizationOverlay(taskId, btn);
     } catch (e) {
         btn.disabled = false;
-        btn.textContent = '🔄 Пере-категоризация';
         showToast('Ошибка при запуске обновления');
     }
 }
 
-function startRefreshPolling(btn) {
-    let attempts = 0;
+function showCategorizationOverlay(taskId, btn) {
+    const overlay = document.createElement('div');
+    overlay.className = 'categorization-overlay';
+    overlay.id = 'categorization-overlay';
+    overlay.innerHTML = `
+        <div class="spinner"></div>
+        <div class="status-text">Категоризация через AI</div>
+        <div class="status-timer" id="overlay-timer">0с</div>
+        <div class="status-sub" id="overlay-status">Запуск задачи...</div>
+    `;
+    document.body.appendChild(overlay);
+
+    const statusMap = {
+        pending: 'Задача в очереди...',
+        running: 'AI обрабатывает транзакции...',
+        retrying: 'Повторная попытка...',
+    };
+
+    let elapsed = 0;
+    const maxSeconds = 300;
+
+    const timerInterval = setInterval(() => {
+        elapsed++;
+        const el = document.getElementById('overlay-timer');
+        if (el) el.textContent = `${elapsed}с`;
+    }, 1000);
+
     refreshPolling = setInterval(async () => {
-        attempts++;
-        if (attempts > 20) {
-            clearInterval(refreshPolling);
-            refreshPolling = null;
-            btn.disabled = false;
-            btn.textContent = '🔄 Пере-категоризация';
-            showToast('Обновление заняло слишком много времени');
+        if (elapsed >= maxSeconds) {
+            clearPolling();
+            updateOverlayStatus('Превышено время ожидания');
+            setTimeout(() => { removeOverlay(); loadCurrentTab(); }, 2000);
             return;
         }
         try {
-            const summary = await api(`/api/report/summary?${periodQuery()}&currency=${currentCurrency}`);
-            const hash = JSON.stringify(summary);
-            if (hash !== lastSummaryHash) {
-                clearInterval(refreshPolling);
-                refreshPolling = null;
-                btn.disabled = false;
-                btn.textContent = '🔄 Пере-категоризация';
-                showToast('Готово! Данные обновлены');
-                loadCurrentTab();
+            const task = await api(`/api/report/task-status?task_id=${taskId}`);
+            const statusEl = document.getElementById('overlay-status');
+            if (statusEl) statusEl.textContent = statusMap[task.status] || task.status;
+
+            if (task.status === 'completed') {
+                clearPolling();
+                updateOverlayStatus('Готово!');
+                setTimeout(() => { removeOverlay(); showToast('Данные обновлены'); loadCurrentTab(); }, 1000);
+            } else if (task.status === 'failed') {
+                clearPolling();
+                updateOverlayStatus(`Ошибка: ${task.error || 'неизвестная'}`);
+                setTimeout(() => { removeOverlay(); loadCurrentTab(); }, 3000);
             }
         } catch (e) {}
-    }, 3000);
+    }, 2000);
+
+    function clearPolling() {
+        clearInterval(refreshPolling);
+        clearInterval(timerInterval);
+        refreshPolling = null;
+    }
+
+    function updateOverlayStatus(text) {
+        const el = document.getElementById('overlay-status');
+        if (el) el.textContent = text;
+    }
+
+    function removeOverlay() {
+        const el = document.getElementById('categorization-overlay');
+        if (el) el.remove();
+        btn.disabled = false;
+    }
 }
 
 async function handleExport() {

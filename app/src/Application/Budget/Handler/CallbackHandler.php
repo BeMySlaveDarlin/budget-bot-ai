@@ -19,7 +19,7 @@ class CallbackHandler
     ) {
     }
 
-    public function handle(array $callback): void
+    public function handle(array $callback, ?int $topicId = null): void
     {
         $callbackId = $callback['id'];
         $data = $callback['data'] ?? '';
@@ -36,14 +36,14 @@ class CallbackHandler
         $action = $parts[0] ?? '';
 
         $result = match ($action) {
-            'settings' => $this->handleSettings($parts, $chatTgId),
+            'settings' => $this->handleSettings($parts, $chatTgId, $topicId),
             default => ['text' => 'Unknown action', 'alert' => false],
         };
 
         $this->telegram->answerCallbackQuery($callbackId, $result['text'], $result['alert'] ?? false);
     }
 
-    private function handleSettings(array $parts, int $chatTgId): array
+    private function handleSettings(array $parts, int $chatTgId, ?int $topicId = null): array
     {
         $subAction = $parts[1] ?? '';
         $value = $parts[2] ?? '';

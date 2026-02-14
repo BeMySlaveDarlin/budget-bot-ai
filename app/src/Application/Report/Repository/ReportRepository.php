@@ -10,42 +10,72 @@ use DI\Attribute\Injectable;
 #[Injectable]
 final class ReportRepository
 {
-    private const string TRANSACTIONS_CTE = <<<'SQL'
-        WITH transactions AS (
-            SELECT m.id, m.chat_id, m.created_at,
-                t.idx AS item_index,
-                (t.value->>'type') AS type,
-                (t.value->>'category') AS category,
-                (t.value->>'amount')::NUMERIC AS amount,
-                (t.value->>'currency') AS currency,
-                (t.value->>'description') AS description,
-                (t.value->>'wallet') AS wallet
-            FROM messages m
-            CROSS JOIN LATERAL jsonb_array_elements(m.categorized) WITH ORDINALITY AS t(value, idx)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
-              AND m.created_at BETWEEN ? AND ?
-        )
-    SQL;
-
     public function __construct(
         private DatabaseConnection $db
     ) {}
 
-    public function getSummary(int $chatId, string $from, string $to): array
+    private function transactionsCte(?int $topicId, array &$params, int $chatId, string $from, string $to): string
     {
-        $sql = self::TRANSACTIONS_CTE . <<<'SQL'
+        $params[] = $chatId;
+
+        $topicFilter = $topicId !== null
+            ? 'AND m.topic_id = ?'
+            : 'AND m.topic_id IS NULL';
+
+        if ($topicId !== null) {
+            $params[] = $topicId;
+        }
+
+        $params[] = $from;
+        $params[] = $to;
+
+        return <<<SQL
+            WITH transactions AS (
+                SELECT m.id, m.chat_id, m.created_at,
+                    t.idx AS item_index,
+                    (t.value->>'type') AS type,
+                    (t.value->>'category') AS category,
+                    (t.value->>'amount')::NUMERIC AS amount,
+                    (t.value->>'currency') AS currency,
+                    (t.value->>'description') AS description,
+                    (t.value->>'wallet') AS wallet
+                FROM messages m
+                CROSS JOIN LATERAL jsonb_array_elements(m.categorized) WITH ORDINALITY AS t(value, idx)
+                WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
+                  AND m.created_at BETWEEN ? AND ?
+            )
+        SQL;
+    }
+
+    private function topicFilter(?int $topicId, array &$params): string
+    {
+        if ($topicId !== null) {
+            $params[] = $topicId;
+            return 'AND m.topic_id = ?';
+        }
+
+        return 'AND m.topic_id IS NULL';
+    }
+
+    public function getSummary(int $chatId, string $from, string $to, ?int $topicId = null): array
+    {
+        $params = [];
+        $cte = $this->transactionsCte($topicId, $params, $chatId, $from, $to);
+
+        $sql = $cte . <<<'SQL'
             SELECT type, currency, SUM(amount) AS total, COUNT(*) AS count
             FROM transactions
             GROUP BY type, currency
             ORDER BY type, currency
         SQL;
 
-        return $this->db->query($sql, [$chatId, $from, $to]);
+        return $this->db->query($sql, $params);
     }
 
-    public function getCategoryBreakdown(int $chatId, string $from, string $to, ?string $type = null): array
+    public function getCategoryBreakdown(int $chatId, string $from, string $to, ?string $type = null, ?int $topicId = null): array
     {
-        $params = [$chatId, $from, $to];
+        $params = [];
+        $cte = $this->transactionsCte($topicId, $params, $chatId, $from, $to);
 
         $typeFilter = '';
         if ($type !== null) {
@@ -53,7 +83,7 @@ final class ReportRepository
             $params[] = $type;
         }
 
-        $sql = self::TRANSACTIONS_CTE . <<<SQL
+        $sql = $cte . <<<SQL
             SELECT category, type, currency, SUM(amount) AS total, COUNT(*) AS count
             FROM transactions
             {$typeFilter}
@@ -70,10 +100,10 @@ final class ReportRepository
         string $to,
         ?string $type = null,
         ?string $category = null,
-        int $limit = 50,
-        int $offset = 0
+        ?int $topicId = null
     ): array {
-        $params = [$chatId, $from, $to];
+        $params = [];
+        $cte = $this->transactionsCte($topicId, $params, $chatId, $from, $to);
         $filters = [];
 
         if ($type !== null) {
@@ -88,35 +118,37 @@ final class ReportRepository
 
         $whereClause = !empty($filters) ? 'WHERE ' . implode(' AND ', $filters) : '';
 
-        $sql = self::TRANSACTIONS_CTE . <<<SQL
-            SELECT *, COUNT(*) OVER() AS total_count
+        $sql = $cte . <<<SQL
+            SELECT *
             FROM transactions
             {$whereClause}
             ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
         SQL;
-
-        $params[] = $limit;
-        $params[] = $offset;
 
         return $this->db->query($sql, $params);
     }
 
-    public function getMonthlyTrends(int $chatId, string $from, string $to): array
+    public function getMonthlyTrends(int $chatId, string $from, string $to, ?int $topicId = null): array
     {
-        $sql = self::TRANSACTIONS_CTE . <<<'SQL'
+        $params = [];
+        $cte = $this->transactionsCte($topicId, $params, $chatId, $from, $to);
+
+        $sql = $cte . <<<'SQL'
             SELECT TO_CHAR(created_at, 'YYYY-MM') AS month, type, currency, SUM(amount) AS total, COUNT(*) AS count
             FROM transactions
             GROUP BY month, type, currency
             ORDER BY month, type
         SQL;
 
-        return $this->db->query($sql, [$chatId, $from, $to]);
+        return $this->db->query($sql, $params);
     }
 
-    public function getWalletBalances(int $chatId): array
+    public function getWalletBalances(int $chatId, ?int $topicId = null): array
     {
-        $sql = <<<'SQL'
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+
+        $sql = <<<SQL
             SELECT DISTINCT ON (t.value->>'wallet')
                 (t.value->>'wallet') AS wallet,
                 (t.value->>'amount')::NUMERIC AS amount,
@@ -124,68 +156,83 @@ final class ReportRepository
                 m.created_at
             FROM messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'
             ORDER BY t.value->>'wallet', m.created_at DESC
         SQL;
 
-        return $this->db->query($sql, [$chatId]);
+        return $this->db->query($sql, $params);
     }
 
-    public function getLatestBalances(int $chatId): array
+    public function getLatestBalances(int $chatId, ?int $topicId = null): array
     {
-        $sql = <<<'SQL'
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+
+        $sql = <<<SQL
             SELECT DISTINCT ON (t.value->>'wallet')
-                m.id AS message_id,
                 (t.value->>'wallet') AS wallet,
                 (t.value->>'amount')::NUMERIC AS amount,
-                (t.value->>'currency') AS currency
+                (t.value->>'currency') AS currency,
+                m.created_at AS balance_at
             FROM messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'
-            ORDER BY t.value->>'wallet', m.id DESC
+            ORDER BY t.value->>'wallet', m.created_at DESC
         SQL;
 
-        return $this->db->query($sql, [$chatId]);
+        return $this->db->query($sql, $params);
     }
 
-    public function getTransactionsAfterMessage(int $chatId, int $afterMessageId): array
+    public function getTransactionsAfterDate(int $chatId, string $afterDate, ?int $topicId = null): array
     {
-        $sql = <<<'SQL'
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+        $params[] = $afterDate;
+
+        $sql = <<<SQL
             SELECT (t.value->>'type') AS type,
                    (t.value->>'amount')::NUMERIC AS amount,
                    (t.value->>'currency') AS currency
             FROM messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
-                AND m.id > ?
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
+                AND m.created_at > ?
                 AND t.value->>'type' IN ('income', 'expense')
         SQL;
 
-        return $this->db->query($sql, [$chatId, $afterMessageId]);
+        return $this->db->query($sql, $params);
     }
 
-    public function getTransactionsForExport(int $chatId, string $from, string $to): array
+    public function getTransactionsForExport(int $chatId, string $from, string $to, ?int $topicId = null): array
     {
-        $sql = self::TRANSACTIONS_CTE . <<<'SQL'
+        $params = [];
+        $cte = $this->transactionsCte($topicId, $params, $chatId, $from, $to);
+
+        $sql = $cte . <<<'SQL'
             SELECT type, category, amount, currency, description, wallet, created_at
             FROM transactions
             ORDER BY created_at DESC
         SQL;
 
-        return $this->db->query($sql, [$chatId, $from, $to]);
+        return $this->db->query($sql, $params);
     }
 
-    public function clearCategorization(int $chatId, string $from, string $to): int
+    public function clearCategorization(int $chatId, string $from, string $to, ?int $topicId = null): int
     {
+        $params = [$chatId];
+        $topicFilter = str_replace('m.', '', $this->topicFilter($topicId, $params));
+        $params[] = $from;
+        $params[] = $to;
+
         return $this->db->update(
-            "UPDATE messages SET categorized = NULL, updated_at = NOW() WHERE chat_id = ? AND created_at BETWEEN ? AND ? AND categorized IS NOT NULL",
-            [$chatId, $from, $to]
+            "UPDATE messages SET categorized = NULL WHERE chat_id = ? {$topicFilter} AND created_at BETWEEN ? AND ? AND categorized IS NOT NULL",
+            $params
         );
     }
 
-    public function createTransaction(int $chatId, int $userId, array $data): int
+    public function createTransaction(int $chatId, int $userId, array $data, ?int $topicId = null): int
     {
         $item = json_encode([[
             'type' => $data['type'],
@@ -197,8 +244,8 @@ final class ReportRepository
         ]], JSON_UNESCAPED_UNICODE);
 
         return $this->db->insert(
-            "INSERT INTO messages (chat_id, user_id, telegram_message_id, raw_text, categorized, created_at, updated_at) VALUES (?, ?, NULL, ?, ?::jsonb, NOW(), NOW())",
-            [$chatId, $userId, $data['description'], $item]
+            "INSERT INTO messages (chat_id, user_id, telegram_message_id, raw_text, categorized, topic_id, created_at) VALUES (?, ?, NULL, ?, ?::jsonb, ?, NOW())",
+            [$chatId, $userId, $data['description'], $item, $topicId]
         );
     }
 
@@ -216,7 +263,7 @@ final class ReportRepository
         $arrayIndex = $itemIndex - 1;
 
         $rowsAffected = $this->db->update(
-            "UPDATE messages SET categorized = jsonb_set(categorized, ARRAY[?::text], ?::jsonb), raw_text = ?, updated_at = NOW() WHERE id = ?",
+            "UPDATE messages SET categorized = jsonb_set(categorized, ARRAY[?::text], ?::jsonb), raw_text = ? WHERE id = ?",
             [(string) $arrayIndex, $element, $data['description'], $messageId]
         );
 
@@ -241,38 +288,44 @@ final class ReportRepository
         }
 
         return $this->db->update(
-            "UPDATE messages SET categorized = categorized - ?, updated_at = NOW() WHERE id = ?",
+            "UPDATE messages SET categorized = categorized - ? WHERE id = ?",
             [$arrayIndex, $messageId]
         ) > 0;
     }
 
-    public function getDistinctCategories(int $chatId): array
+    public function getDistinctCategories(int $chatId, ?int $topicId = null): array
     {
-        $sql = <<<'SQL'
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+
+        $sql = <<<SQL
             SELECT DISTINCT (t.value->>'category') AS category
             FROM messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' IN ('income', 'expense')
                 AND t.value->>'category' IS NOT NULL
             ORDER BY category
         SQL;
 
-        return array_column($this->db->query($sql, [$chatId]), 'category');
+        return array_column($this->db->query($sql, $params), 'category');
     }
 
-    public function getDistinctWallets(int $chatId): array
+    public function getDistinctWallets(int $chatId, ?int $topicId = null): array
     {
-        $sql = <<<'SQL'
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+
+        $sql = <<<SQL
             SELECT DISTINCT (t.value->>'wallet') AS wallet
             FROM messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
-            WHERE m.chat_id = ? AND m.categorized IS NOT NULL
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'
                 AND t.value->>'wallet' IS NOT NULL
             ORDER BY wallet
         SQL;
 
-        return array_column($this->db->query($sql, [$chatId]), 'wallet');
+        return array_column($this->db->query($sql, $params), 'wallet');
     }
 }

@@ -32,16 +32,23 @@ final class ViewCommand implements BotCommandInterface
         }
 
         $chatId = $ctx->getChatId();
+        $topicId = $ctx->getTopicId();
         $currency = $ctx->getCurrency();
         $months = $this->chatRepo->getPlanningPeriod($chatId);
 
+        $payload = [
+            'chat_id' => $chatId,
+            'months' => $months,
+            'currency' => $currency,
+        ];
+
+        if ($topicId !== null) {
+            $payload['topic_id'] = $topicId;
+        }
+
         $this->taskManager->dispatch(
             CategorizationTask::class,
-            [
-                'chat_id' => $chatId,
-                'months' => $months,
-                'currency' => $currency,
-            ],
+            $payload,
             $chatId,
             'chat'
         );
@@ -57,15 +64,18 @@ final class ViewCommand implements BotCommandInterface
         }
 
         $chatId = $ctx->getChatId();
+        $topicId = $ctx->getTopicId();
         $isPrivate = ($ctx->chat['type'] ?? '') === 'private';
 
+        $topicParam = $topicId !== null ? "&topic_id={$topicId}" : '';
+
         if ($isPrivate) {
-            $url = "{$appUrl}/report?chat_id={$chatId}";
+            $url = "{$appUrl}/report?chat_id={$chatId}{$topicParam}";
             $button = ['text' => '📊 Открыть отчёт', 'web_app' => ['url' => $url]];
         } else {
             $ts = time();
             $sig = hash_hmac('sha256', "{$chatId}:{$ts}", $this->config->get('telegram.bot_token', ''));
-            $url = "{$appUrl}/report?chat_id={$chatId}&ts={$ts}&sig={$sig}";
+            $url = "{$appUrl}/report?chat_id={$chatId}&ts={$ts}&sig={$sig}{$topicParam}";
             $button = ['text' => '📊 Открыть отчёт', 'url' => $url];
         }
 
