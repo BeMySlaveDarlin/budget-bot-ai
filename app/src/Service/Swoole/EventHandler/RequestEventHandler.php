@@ -18,6 +18,8 @@ use Swoole\Http\Response as SwooleResponse;
 #[SwooleEventHandler('Request')]
 class RequestEventHandler
 {
+    private const array EXCLUDED_PATHS = ['/metrics', '/health', '/favicon.ico'];
+
     public function __construct(
         private Router $router,
         private LoggerInterface $logger
@@ -26,17 +28,41 @@ class RequestEventHandler
     public function __invoke(SwooleRequest $swooleRequest, SwooleResponse $swooleResponse): void
     {
         Coroutine::create(function () use ($swooleRequest, $swooleResponse) {
+            $uri = $swooleRequest->server['request_uri'] ?? '';
+            $method = $swooleRequest->server['request_method'] ?? '';
+            $startTime = microtime(true);
+
             try {
                 $request = new Request($swooleRequest);
                 $response = new Response($swooleResponse);
 
+                if (!in_array($uri, self::EXCLUDED_PATHS, true)) {
+                    $this->logger->info('HTTP request', [
+                        'method' => $method,
+                        'uri' => $uri,
+                    ]);
+                }
+
                 $this->router->dispatch($request, $response);
 
                 $response->send();
+
+                if (!in_array($uri, self::EXCLUDED_PATHS, true)) {
+                    $duration = (microtime(true) - $startTime) * 1000;
+                    $this->logger->info('HTTP response', [
+                        'method' => $method,
+                        'uri' => $uri,
+                        'status' => $response->getStatusCode(),
+                        'duration_ms' => round($duration, 2),
+                    ]);
+                }
             } catch (\Throwable $e) {
+                $duration = (microtime(true) - $startTime) * 1000;
                 $this->logger->error('Request handling failed', [
+                    'method' => $method,
+                    'uri' => $uri,
                     'error' => $e->getMessage(),
-                    'uri' => $swooleRequest->server['request_uri'] ?? '',
+                    'duration_ms' => round($duration, 2),
                 ]);
 
                 $swooleResponse->status(500);

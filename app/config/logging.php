@@ -58,6 +58,40 @@ return [
                 ],
             ],
         ],
+        'http' => [
+            'handlers' => [
+                [
+                    'class' => RotatingFileHandler::class,
+                    'path' => '/var/www/app/runtime/logs/http.log',
+                    'level' => $level,
+                    'max_files' => 7,
+                    'formatter' => 'json',
+                ],
+                [
+                    'class' => StreamHandler::class,
+                    'stream' => 'php://stdout',
+                    'level' => $level,
+                    'formatter' => 'line',
+                ],
+            ],
+        ],
+        'error' => [
+            'handlers' => [
+                [
+                    'class' => RotatingFileHandler::class,
+                    'path' => '/var/www/app/runtime/logs/error.log',
+                    'level' => 'error',
+                    'max_files' => 14,
+                    'formatter' => 'json',
+                ],
+                [
+                    'class' => StreamHandler::class,
+                    'stream' => 'php://stderr',
+                    'level' => 'error',
+                    'formatter' => 'line',
+                ],
+            ],
+        ],
     ],
 
     'formatters' => [

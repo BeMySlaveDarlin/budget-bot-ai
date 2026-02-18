@@ -26,6 +26,11 @@ class CallbackHandler
         $message = $callback['message'] ?? null;
         $chatTgId = $message['chat']['id'] ?? null;
 
+        $this->logger->info('[Callback] Received', [
+            'data' => $data,
+            'chat_tg_id' => $chatTgId,
+        ]);
+
         if (!$chatTgId || !$data) {
             $this->telegram->answerCallbackQuery($callbackId, 'Invalid callback');
 

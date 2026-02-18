@@ -83,18 +83,32 @@ class MessageRepository
         return (int) ($result['count'] ?? 0);
     }
 
-    public function updateText(int $chatId, int $telegramMessageId, string $text): bool
+    public function updateText(int $chatId, int $telegramMessageId, string $text, ?int $topicId = null): bool
     {
+        if ($topicId !== null) {
+            return $this->db->execute(
+                "UPDATE messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?",
+                [$text, $chatId, $telegramMessageId, $topicId]
+            ) > 0;
+        }
+
         return $this->db->execute(
-            "UPDATE messages SET raw_text = ? WHERE chat_id = ? AND telegram_message_id = ?",
+            "UPDATE messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL",
             [$text, $chatId, $telegramMessageId]
         ) > 0;
     }
 
-    public function deleteByTelegramMessageId(int $chatId, int $telegramMessageId): bool
+    public function deleteByTelegramMessageId(int $chatId, int $telegramMessageId, ?int $topicId = null): bool
     {
+        if ($topicId !== null) {
+            return $this->db->execute(
+                'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?',
+                [$chatId, $telegramMessageId, $topicId]
+            ) > 0;
+        }
+
         return $this->db->execute(
-            'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ?',
+            'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL',
             [$chatId, $telegramMessageId]
         ) > 0;
     }

@@ -33,6 +33,12 @@ class WebhookProcessTask extends AbstractTask
             isset($update['edited_message']) => 'edited_message',
             default => 'message',
         };
+
+        $this->getLogger()->info('[Webhook] Processing update', [
+            'update_id' => $updateId,
+            'type' => $type,
+        ]);
+
         $updateRepo->create($updateId, $type, $update);
 
         if (isset($update['callback_query'])) {
@@ -83,11 +89,18 @@ class WebhookProcessTask extends AbstractTask
         $deletePatterns = ['del', 'удалить', 'удали', 'отмена'];
 
         if ($replyTo && in_array($lowerText, $deletePatterns, true)) {
-            $this->getService(MessageHandler::class)->handleDelete($chat['id'], $replyTo['message_id']);
+            $this->getService(MessageHandler::class)->handleDelete($chat['id'], $replyTo['message_id'], $topicId);
             $updateRepo->markProcessed($updateId);
 
             return ['status' => 'ok', 'type' => 'delete'];
         }
+
+        $this->getLogger()->info('[Webhook] Message received', [
+            'chat_id' => $chat['id'],
+            'user_id' => $user['id'],
+            'is_command' => str_starts_with($text, '/'),
+            'text_length' => mb_strlen($text),
+        ]);
 
         if (str_starts_with($text, '/')) {
             $this->handleCommand($text, $chat, $user, $chatTg['id'], $messageId, $topicId);
@@ -177,6 +190,7 @@ class WebhookProcessTask extends AbstractTask
 
         $chatTg = $editedMessage['chat'];
         $messageId = $editedMessage['message_id'];
+        $topicId = $editedMessage['message_thread_id'] ?? null;
 
         $chatRepo = $this->getService(ChatRepository::class);
         $chat = $chatRepo->findByTelegramChatId($chatTg['id']);
@@ -184,7 +198,7 @@ class WebhookProcessTask extends AbstractTask
             return;
         }
 
-        $this->getService(MessageHandler::class)->handleEdit($chat['id'], $messageId, $text);
+        $this->getService(MessageHandler::class)->handleEdit($chat['id'], $messageId, $text, $topicId);
     }
 
     private function matchesAny(string $text, array $phrases): bool

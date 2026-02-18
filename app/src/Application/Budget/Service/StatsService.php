@@ -98,6 +98,10 @@ class StatsService
             if (!empty($msg['categorized'])) {
                 $items = is_string($msg['categorized']) ? json_decode($msg['categorized'], true) : $msg['categorized'];
                 foreach ($items as $item) {
+                    if (!isset($item['message_id'])) {
+                        $item['message_id'] = $msg['id'];
+                    }
+                    $item['created_at'] = $msg['created_at'];
                     $cached[] = $item;
                 }
             } else {
@@ -136,7 +140,7 @@ class StatsService
                 ]);
 
                 $maxTokens = (int) $this->config->get('llm.providers.claude.max_tokens', 64000);
-                $request
+                $request = $request
                     ->withTools([$tool])
                     ->withMaxTokens($maxTokens);
 
@@ -187,6 +191,15 @@ class StatsService
                 $this->logger->info('[Stats] Categorization saved to DB', [
                     'items_saved' => count($newItems),
                 ]);
+
+                $msgDateMap = [];
+                foreach ($uncategorized as $m) {
+                    $msgDateMap[$m['id']] = $m['created_at'];
+                }
+                foreach ($newItems as &$ni) {
+                    $ni['created_at'] = $msgDateMap[$ni['message_id']] ?? date('Y-m-d H:i:s');
+                }
+                unset($ni);
 
                 $cached = array_merge($cached, $newItems);
                 $tokensUsed = $response->usage->totalTokens;
@@ -310,6 +323,7 @@ class StatsService
 
             $result[] = [
                 'message_id' => $item['message_id'] ?? null,
+                'created_at' => $item['created_at'] ?? null,
                 'type' => $item['type'] ?? 'expense',
                 'wallet' => $item['wallet'] ?? null,
                 'category' => $item['category'] ?? 'другое',
@@ -379,19 +393,17 @@ class StatsService
                 $lines[] = "• {$wallet}: " . $this->formatAmount($amount) . " {$currency}";
             }
 
-            $maxBalanceMessageId = max(array_column($totalWalletBalance, 'message_id'));
+            $maxBalanceDate = max(array_column($totalWalletBalance, 'created_at'));
             $adjustments = 0;
             foreach ($items as $item) {
-                if (($item['message_id'] ?? 0) > $maxBalanceMessageId && $item['type'] !== 'balance') {
+                if (($item['created_at'] ?? '') > $maxBalanceDate && $item['type'] !== 'balance') {
                     $adjustments += ($item['type'] === 'income') ? $item['amount'] : -$item['amount'];
                 }
             }
 
-            if ($adjustments != 0) {
-                $currentBalance = $balanceSum + $adjustments;
-                $lines[] = '';
-                $lines[] = "<b>Итого остаток:</b> " . $this->formatAmount($currentBalance) . " {$currency}";
-            }
+            $currentBalance = $balanceSum + $adjustments;
+            $lines[] = '';
+            $lines[] = "<b>Итого остаток:</b> " . $this->formatAmount($currentBalance) . " {$currency}";
         }
 
         return implode("\n", $lines);
@@ -403,9 +415,9 @@ class StatsService
 
         foreach ($balances as $item) {
             $wallet = $item['wallet'] ?? 'default';
-            $messageId = $item['message_id'] ?? 0;
+            $createdAt = $item['created_at'] ?? '';
 
-            if (!isset($walletLatest[$wallet]) || $walletLatest[$wallet]['message_id'] < $messageId) {
+            if (!isset($walletLatest[$wallet]) || ($walletLatest[$wallet]['created_at'] ?? '') < $createdAt) {
                 $walletLatest[$wallet] = $item;
             }
         }

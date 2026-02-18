@@ -6,12 +6,14 @@ namespace App\Application\Budget\Handler;
 
 use App\Component\Telegram\Repository\MessageRepository;
 use DI\Attribute\Injectable;
+use Psr\Log\LoggerInterface;
 
 #[Injectable]
 class MessageHandler
 {
     public function __construct(
-        private MessageRepository $messageRepo
+        private MessageRepository $messageRepo,
+        private LoggerInterface $logger
     ) {
     }
 
@@ -21,16 +23,33 @@ class MessageHandler
             return;
         }
 
+        $this->logger->info('[Message] Saving expense', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+        ]);
+
         $this->messageRepo->create($chatId, $userId, $messageId, $text, $topicId);
     }
 
-    public function handleEdit(int $chatId, int $telegramMessageId, string $text): void
+    public function handleEdit(int $chatId, int $telegramMessageId, string $text, ?int $topicId = null): void
     {
-        $this->messageRepo->updateText($chatId, $telegramMessageId, $text);
+        $this->logger->info('[Message] Edit', [
+            'chat_id' => $chatId,
+            'message_id' => $telegramMessageId,
+            'topic_id' => $topicId,
+        ]);
+
+        $this->messageRepo->updateText($chatId, $telegramMessageId, $text, $topicId);
     }
 
-    public function handleDelete(int $chatId, int $telegramMessageId): bool
+    public function handleDelete(int $chatId, int $telegramMessageId, ?int $topicId = null): bool
     {
-        return $this->messageRepo->deleteByTelegramMessageId($chatId, $telegramMessageId);
+        $this->logger->info('[Message] Delete', [
+            'chat_id' => $chatId,
+            'message_id' => $telegramMessageId,
+            'topic_id' => $topicId,
+        ]);
+
+        return $this->messageRepo->deleteByTelegramMessageId($chatId, $telegramMessageId, $topicId);
     }
 }

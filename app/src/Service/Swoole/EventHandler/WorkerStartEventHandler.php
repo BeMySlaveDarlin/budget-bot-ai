@@ -7,10 +7,12 @@ namespace App\Service\Swoole\EventHandler;
 use App\Component\ExchangeRate\ExchangeRateService;
 use App\Service\Attribute\SwooleEventHandler;
 use App\Service\Config\Config;
+use App\Service\Logging\LoggerFactory;
 use App\Service\Swoole\Contract\SwooleEventHandlerInterface;
 use App\Service\Task\TaskRecoveryService;
 use DI\Attribute\Injectable;
 use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
 use Swoole\Http\Server;
 use Swoole\Timer;
 
@@ -30,7 +32,11 @@ class WorkerStartEventHandler implements SwooleEventHandlerInterface
         $isTaskWorker = $workerId >= $server->setting['worker_num'];
         $workerType = $isTaskWorker ? 'Task' : 'Worker';
 
-        echo "{$workerType} #{$workerId} started (PID: " . \posix_getpid() . ")\n";
+        $this->getLogger()->info("{$workerType} started", [
+            'worker_id' => $workerId,
+            'pid' => \posix_getpid(),
+            'type' => $workerType,
+        ]);
 
         if (!$isTaskWorker && $workerId === 0) {
             $this->recoverTasks();
@@ -47,7 +53,9 @@ class WorkerStartEventHandler implements SwooleEventHandlerInterface
 
         Timer::tick($interval, fn () => $this->updateExchangeRates());
 
-        echo "Exchange rate timer started (interval: " . ($interval / 1000) . "s)\n";
+        $this->getLogger()->info('Exchange rate timer started', [
+            'interval_sec' => $interval / 1000,
+        ]);
     }
 
     private function updateExchangeRates(): void
@@ -56,9 +64,11 @@ class WorkerStartEventHandler implements SwooleEventHandlerInterface
             $service = $this->container->get(ExchangeRateService::class);
             $result = $service->updateAllRates();
             $total = count($result['fiat'] ?? []) + count($result['crypto'] ?? []);
-            echo "[" . date('Y-m-d H:i:s') . "] Exchange rates updated: {$total} currencies\n";
+            $this->getLogger()->info('Exchange rates updated', ['total' => $total]);
         } catch (\Throwable $e) {
-            echo "[" . date('Y-m-d H:i:s') . "] Exchange rate update failed: {$e->getMessage()}\n";
+            $this->getLogger()->error('Exchange rate update failed', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -68,7 +78,14 @@ class WorkerStartEventHandler implements SwooleEventHandlerInterface
             $recoveryService = $this->container->get(TaskRecoveryService::class);
             $recoveryService->recoverOnWorkerStart(0);
         } catch (\Throwable $e) {
-            echo "Task recovery failed: {$e->getMessage()}\n";
+            $this->getLogger()->error('Task recovery failed', [
+                'error' => $e->getMessage(),
+            ]);
         }
+    }
+
+    private function getLogger(): LoggerInterface
+    {
+        return $this->container->get(LoggerFactory::class)->create();
     }
 }

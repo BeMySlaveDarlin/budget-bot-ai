@@ -617,6 +617,8 @@ let txSort = 'amount';
 let txSortDir = 'desc';
 let charts = {};
 let categoriesCache = [];
+let categoryItemsCache = {};
+let lazyMode = true;
 let refreshPolling = null;
 let lastSummaryHash = '';
 let trendsCategoryFilter = new Set();
@@ -942,7 +944,11 @@ function updateCategoryFilter() {
 
 document.getElementById('category-filter').addEventListener('change', (e) => {
     txCategory = e.target.value;
-    loadTransactions(true);
+    if (lazyMode) {
+        renderCategoryList();
+    } else {
+        loadTransactions(true);
+    }
 });
 
 let searchTimeout;
@@ -974,14 +980,48 @@ document.getElementById('sort-controls').addEventListener('click', (e) => {
         txSortDir = sort === 'amount' ? 'desc' : 'asc';
     }
     updateSortButtons();
-    renderTransactions();
+    if (lazyMode) renderCategoryList();
+    else renderTransactions();
 });
 
 async function loadTransactions(reset = false) {
-    if (reset) { txLoaded = []; }
+    if (reset) {
+        txLoaded = [];
+        categoryItemsCache = {};
+    }
     renderTypeFilters();
     updateSortButtons();
 
+    lazyMode = !txSearch;
+
+    if (lazyMode) {
+        await loadTransactionsLazy(reset);
+    } else {
+        await loadTransactionsFull(reset);
+    }
+}
+
+async function loadTransactionsLazy(reset) {
+    if (reset) showSection('transactions', 'skeleton');
+
+    try {
+        let url = `/api/report/categories?${periodQuery()}&currency=${currentCurrency}`;
+        if (txType) url += `&type=${txType}`;
+        const data = await api(url);
+        categoriesCache = data.items || [];
+
+        updateCategoryFilter();
+        renderCategoryList();
+        showSection('transactions', 'content');
+    } catch (e) {
+        const errEl = document.getElementById('transactions-error');
+        errEl.innerHTML = '';
+        errEl.appendChild(errorBlock('Не удалось загрузить операции', () => loadTransactions(true)));
+        showSection('transactions', 'error');
+    }
+}
+
+async function loadTransactionsFull(reset) {
     if (reset) showSection('transactions', 'skeleton');
 
     try {
@@ -1012,6 +1052,152 @@ async function loadTransactions(reset = false) {
             showToast('Ошибка загрузки');
         }
     }
+}
+
+function renderCategoryList() {
+    const container = document.getElementById('transactions-list');
+    let cats = categoriesCache.filter(c => c.type !== 'balance');
+
+    if (txCategory) {
+        cats = cats.filter(c => c.category === txCategory);
+    }
+
+    if (cats.length === 0) {
+        container.innerHTML = '';
+        container.appendChild(emptyBlock('Нет операций'));
+        container.classList.remove('hidden');
+        document.getElementById('load-more-wrap').classList.add('hidden');
+        return;
+    }
+
+    if (txSort === 'amount') {
+        cats.sort((a, b) => txSortDir === 'desc'
+            ? Math.abs(b.total) - Math.abs(a.total)
+            : Math.abs(a.total) - Math.abs(b.total));
+    } else {
+        cats.sort((a, b) => txSortDir === 'asc'
+            ? (a.category || '').localeCompare(b.category || '', 'ru')
+            : (b.category || '').localeCompare(a.category || '', 'ru'));
+    }
+
+    let html = '<div class="fade-in">';
+    cats.forEach((c, idx) => {
+        const cat = c.category || 'Другое';
+        const emoji = CATEGORY_EMOJI[cat.toLowerCase()] || '📦';
+        const catColor = CHART_COLORS[idx % CHART_COLORS.length];
+        const cacheKey = `${txType || ''}:${cat}`;
+        const cached = categoryItemsCache[cacheKey];
+        const isOpen = !!cached;
+
+        html += `
+            <div class="category-group ${isOpen ? 'open' : ''}" data-category="${cat}" data-type-filter="${txType || ''}">
+                <div class="category-header" onclick="toggleCategory(this)">
+                    <div class="cat-emoji" style="background:${catColor}18">${emoji}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-medium">${cat}</div>
+                        <div class="text-xs" style="color:var(--tg-theme-hint-color)">${c.count} операц.</div>
+                    </div>
+                    <div class="text-sm font-semibold text-right whitespace-nowrap">${fmt(Math.abs(c.total))} ${currentCurrency}</div>
+                    <span class="chevron">&#9654;</span>
+                </div>
+                <div class="category-body" id="cat-body-${idx}">
+                    ${isOpen ? renderCategoryItems(cached) : ''}
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+    container.classList.remove('hidden');
+    document.getElementById('load-more-wrap').classList.add('hidden');
+
+    bindTransactionActions(container);
+}
+
+async function toggleCategory(header) {
+    const group = header.parentElement;
+    const cat = group.dataset.category;
+    const typeFilter = group.dataset.typeFilter || '';
+    const cacheKey = `${typeFilter}:${cat}`;
+    const body = group.querySelector('.category-body');
+
+    if (group.classList.contains('open')) {
+        group.classList.remove('open');
+        return;
+    }
+
+    if (categoryItemsCache[cacheKey]) {
+        body.innerHTML = renderCategoryItems(categoryItemsCache[cacheKey]);
+        bindTransactionActions(body);
+        group.classList.add('open');
+        return;
+    }
+
+    body.innerHTML = '<div class="p-3"><div class="skeleton h-12 mb-1"></div><div class="skeleton h-12 mb-1"></div><div class="skeleton h-12"></div></div>';
+    group.classList.add('open');
+
+    try {
+        let url = `/api/report/transactions?${periodQuery()}&currency=${currentCurrency}&category=${encodeURIComponent(cat)}`;
+        if (typeFilter) url += `&type=${typeFilter}`;
+        const data = await api(url);
+        const items = data.items || [];
+        categoryItemsCache[cacheKey] = items;
+        body.innerHTML = renderCategoryItems(items);
+        bindTransactionActions(body);
+    } catch (e) {
+        group.classList.remove('open');
+        body.innerHTML = '';
+        showToast('Ошибка загрузки операций');
+    }
+}
+
+function renderCategoryItems(items) {
+    return items.map(t => {
+        const amountClass = t.type === 'income' ? 'amount-income' : t.type === 'balance' ? 'amount-balance' : 'amount-expense';
+        const sign = t.type === 'income' ? '+' : t.type === 'expense' ? '-' : '';
+        return `
+            <div class="transaction-item" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}">
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium truncate">${t.description || 'Без описания'}</div>
+                    <div class="text-xs" style="color:var(--tg-theme-hint-color)">${fmtDate(t.created_at)}</div>
+                </div>
+                <div class="text-sm font-semibold ${amountClass} text-right whitespace-nowrap">
+                    ${sign}${fmt(Math.abs(t.amount))} ${t.currency || currentCurrency}
+                </div>
+                <div class="flex gap-1 flex-shrink-0 ml-1">
+                    <button class="tx-edit-btn" data-tx='${JSON.stringify({message_id: t.id, item_index: t.item_index ?? 0, type: t.type, amount: t.amount, currency: t.currency, category: t.category, description: t.description, wallet: t.wallet, created_at: t.created_at}).replace(/'/g, "&#39;")}' style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#9998;</button>
+                    <button class="tx-delete-btn" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#128465;</button>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function bindTransactionActions(container) {
+    container.querySelectorAll('.tx-edit-btn').forEach(btn => {
+        if (btn._bound) return;
+        btn._bound = true;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const txData = JSON.parse(btn.dataset.tx);
+            openTransactionSheet(txData);
+        });
+    });
+
+    container.querySelectorAll('.tx-delete-btn').forEach(btn => {
+        if (btn._bound) return;
+        btn._bound = true;
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!confirm('Удалить операцию?')) return;
+            try {
+                await api(`/api/report/transactions?message_id=${btn.dataset.messageId}&item_index=${btn.dataset.itemIndex}`, {method: 'DELETE'});
+                showToast('Удалено');
+                loadCurrentTab();
+            } catch (err) {
+                showToast('Ошибка удаления');
+            }
+        });
+    });
 }
 
 function renderTransactions() {
