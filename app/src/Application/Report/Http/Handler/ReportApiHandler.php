@@ -278,6 +278,83 @@ final class ReportApiHandler
         $response->json(['success' => $success]);
     }
 
+    #[Route('/api/report/rates', 'GET')]
+    public function rates(Request $request, Response $response): void
+    {
+        $user = $this->auth->validate($request);
+        if (!$user) {
+            $response->json(['error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $chatId = (int) $request->getQueryParam('chat_id', 0);
+        if ($chatId === 0) {
+            $response->json(['error' => 'chat_id required'], 400);
+            return;
+        }
+
+        $currency = $request->getQueryParam('currency', 'THB');
+        $topicId = $request->getQueryParam('topic_id') !== null ? (int) $request->getQueryParam('topic_id') : null;
+
+        $response->json($this->reportService->getExchangeRates($chatId, $currency, $topicId));
+    }
+
+    #[Route('/api/report/rates', 'PUT')]
+    public function upsertRate(Request $request, Response $response): void
+    {
+        $user = $this->auth->validate($request);
+        if (!$user) {
+            $response->json(['error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $chatId = (int) $request->getQueryParam('chat_id', 0);
+        if ($chatId === 0) {
+            $response->json(['error' => 'chat_id required'], 400);
+            return;
+        }
+
+        $body = $request->getBody();
+        $from = strtoupper(trim($body['currency_from'] ?? ''));
+        $to = strtoupper(trim($body['currency_to'] ?? ''));
+        $rate = (float) ($body['rate'] ?? 0);
+
+        if ($from === '' || $to === '' || $rate <= 0) {
+            $response->json(['error' => 'currency_from, currency_to and rate (>0) required'], 400);
+            return;
+        }
+
+        $this->reportService->upsertCustomRate($chatId, $from, $to, $rate);
+        $response->json(['success' => true]);
+    }
+
+    #[Route('/api/report/rates', 'DELETE')]
+    public function deleteRate(Request $request, Response $response): void
+    {
+        $user = $this->auth->validate($request);
+        if (!$user) {
+            $response->json(['error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $chatId = (int) $request->getQueryParam('chat_id', 0);
+        if ($chatId === 0) {
+            $response->json(['error' => 'chat_id required'], 400);
+            return;
+        }
+
+        $from = strtoupper(trim($request->getQueryParam('currency_from', '')));
+        $to = strtoupper(trim($request->getQueryParam('currency_to', '')));
+
+        if ($from === '' || $to === '') {
+            $response->json(['error' => 'currency_from and currency_to required'], 400);
+            return;
+        }
+
+        $success = $this->reportService->deleteCustomRate($chatId, $from, $to);
+        $response->json(['success' => $success]);
+    }
+
     #[Route('/api/report/suggestions', 'GET')]
     public function suggestions(Request $request, Response $response): void
     {

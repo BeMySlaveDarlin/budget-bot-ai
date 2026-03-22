@@ -293,6 +293,23 @@ final class ReportRepository
         ) > 0;
     }
 
+    public function getDistinctCurrencies(int $chatId, ?int $topicId = null): array
+    {
+        $params = [$chatId];
+        $topicFilter = $this->topicFilter($topicId, $params);
+
+        $sql = <<<SQL
+            SELECT DISTINCT UPPER(t.value->>'currency') AS currency
+            FROM messages m
+            CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
+            WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
+                AND t.value->>'currency' IS NOT NULL
+            ORDER BY currency
+        SQL;
+
+        return array_column($this->db->query($sql, $params), 'currency');
+    }
+
     public function getDistinctCategories(int $chatId, ?int $topicId = null): array
     {
         $params = [$chatId];

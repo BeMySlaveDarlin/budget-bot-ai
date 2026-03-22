@@ -9,6 +9,7 @@ use App\Application\Report\DTO\PeriodRange;
 use App\Application\Report\DTO\ReportFilter;
 use App\Application\Report\Repository\ReportRepository;
 use App\Component\ExchangeRate\ExchangeRateService;
+use App\Component\ExchangeRate\Repository\CustomExchangeRateRepository;
 use App\Component\Telegram\Repository\ChatRepository;
 use App\Service\Task\TaskManager;
 use DI\Attribute\Injectable;
@@ -21,6 +22,7 @@ final class ReportService
         private ReportRepository $reportRepository,
         private ChatRepository $chatRepository,
         private ExchangeRateService $exchangeRateService,
+        private CustomExchangeRateRepository $customRateRepository,
         private TaskManager $taskManager,
         private LoggerInterface $logger,
     ) {}
@@ -34,7 +36,7 @@ final class ReportService
         foreach ($rows as $row) {
             $type = $row['type'];
             $amount = (float) $row['total'];
-            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency);
+            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency, $chatId);
 
             if (!isset($aggregated[$type])) {
                 $aggregated[$type] = ['total' => 0.0, 'count' => 0];
@@ -70,7 +72,7 @@ final class ReportService
         foreach ($rows as $row) {
             $key = $row['category'] . '|' . $row['type'];
             $amount = (float) $row['total'];
-            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency);
+            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency, $chatId);
 
             if (!isset($aggregated[$key])) {
                 $aggregated[$key] = ['category' => $row['category'], 'type' => $row['type'], 'total' => 0.0, 'count' => 0];
@@ -115,7 +117,7 @@ final class ReportService
         $items = [];
         foreach ($rows as $row) {
             $amount = (float) $row['amount'];
-            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency);
+            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency, $chatId);
 
             $items[] = [
                 'id' => (int) $row['id'],
@@ -147,7 +149,7 @@ final class ReportService
         foreach ($rows as $row) {
             $key = $row['month'] . '|' . $row['type'];
             $amount = (float) $row['total'];
-            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency);
+            $converted = $this->convertCurrency($amount, $row['currency'], $filter->currency, $chatId);
 
             if (!isset($aggregated[$key])) {
                 $aggregated[$key] = ['month' => $row['month'], 'type' => $row['type'], 'total' => 0.0, 'count' => 0];
@@ -193,7 +195,7 @@ final class ReportService
         $previousData = [];
         foreach ($previousRows as $row) {
             $amount = (float) $row['total'];
-            $converted = $this->convertCurrency($amount, $row['currency'], $current->currency);
+            $converted = $this->convertCurrency($amount, $row['currency'], $current->currency, $chatId);
             $previousData[$row['type']] = ($previousData[$row['type']] ?? 0.0) + $converted;
         }
         $previousData = array_map(fn($v) => round($v, 2), $previousData);
@@ -301,7 +303,7 @@ final class ReportService
         $balanceSum = 0.0;
         $maxDate = '';
         foreach ($balances as $balance) {
-            $balanceSum += $this->convertCurrency((float) $balance['amount'], $balance['currency'], $currency);
+            $balanceSum += $this->convertCurrency((float) $balance['amount'], $balance['currency'], $currency, $chatId);
             if ($balance['balance_at'] > $maxDate) {
                 $maxDate = $balance['balance_at'];
             }
@@ -311,7 +313,7 @@ final class ReportService
 
         $adjustments = 0.0;
         foreach ($transactions as $tx) {
-            $amount = $this->convertCurrency((float) $tx['amount'], $tx['currency'], $currency);
+            $amount = $this->convertCurrency((float) $tx['amount'], $tx['currency'], $currency, $chatId);
             if ($tx['type'] === 'income') {
                 $adjustments += $amount;
             } elseif ($tx['type'] === 'expense') {
@@ -325,6 +327,63 @@ final class ReportService
         ];
     }
 
+    public function getExchangeRates(int $chatId, string $currency, ?int $topicId = null): array
+    {
+        $currencies = $this->reportRepository->getDistinctCurrencies($chatId, $topicId);
+        $customRates = $this->customRateRepository->getAllForChat($chatId);
+        $customMap = [];
+        foreach ($customRates as $cr) {
+            $customMap[$cr['currency_from'] . '/' . $cr['currency_to']] = (float) $cr['rate'];
+        }
+
+        $rates = [];
+        foreach ($currencies as $code) {
+            if ($code === $currency) {
+                continue;
+            }
+
+            $isCustom = false;
+            $customKey = $code . '/' . $currency;
+            $reverseKey = $currency . '/' . $code;
+
+            if (isset($customMap[$customKey])) {
+                $rate = $customMap[$customKey];
+                $isCustom = true;
+            } elseif (isset($customMap[$reverseKey]) && $customMap[$reverseKey] > 0) {
+                $rate = 1.0 / $customMap[$reverseKey];
+                $isCustom = true;
+            } else {
+                $rate = $this->exchangeRateService->convert(1.0, $code, $currency);
+            }
+
+            if ($rate === null) {
+                continue;
+            }
+
+            $rates[] = [
+                'from' => $code,
+                'rate' => round($rate, 2),
+                'custom' => $isCustom,
+            ];
+        }
+
+        return [
+            'currency' => $currency,
+            'rates' => $rates,
+            'updated_at' => $this->exchangeRateService->getLastUpdate(),
+        ];
+    }
+
+    public function upsertCustomRate(int $chatId, string $currencyFrom, string $currencyTo, float $rate): void
+    {
+        $this->customRateRepository->upsert($chatId, $currencyFrom, $currencyTo, $rate);
+    }
+
+    public function deleteCustomRate(int $chatId, string $currencyFrom, string $currencyTo): bool
+    {
+        return $this->customRateRepository->delete($chatId, $currencyFrom, $currencyTo);
+    }
+
     private function getPeriod(int $chatId, ReportFilter $filter): PeriodRange
     {
         if ($filter->from !== null && $filter->to !== null) {
@@ -335,10 +394,14 @@ final class ReportService
         return PeriodRange::fromBillingDay($filter->months, $billingDay);
     }
 
-    private function convertCurrency(float $amount, string $from, string $to): float
+    private function convertCurrency(float $amount, string $from, string $to, ?int $chatId = null): float
     {
         if ($from === $to) {
             return $amount;
+        }
+
+        if ($chatId !== null) {
+            return $this->exchangeRateService->convertForChat($amount, $from, $to, $chatId) ?? $amount;
         }
 
         return $this->exchangeRateService->convert($amount, $from, $to) ?? $amount;

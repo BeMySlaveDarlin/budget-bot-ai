@@ -1579,8 +1579,11 @@ function chartOptions() {
 async function loadMore() {
     showSection('more', 'skeleton');
     try {
-        const comparison = await api(`/api/report/comparison?${periodQuery()}&currency=${currentCurrency}`);
-        renderMore(comparison);
+        const [comparison, rates] = await Promise.all([
+            api(`/api/report/comparison?${periodQuery()}&currency=${currentCurrency}`),
+            api(`/api/report/rates?chat_id=${chatId}&currency=${currentCurrency}${urlTopicId ? '&topic_id=' + urlTopicId : ''}`).catch(() => null)
+        ]);
+        renderMore(comparison, rates);
         showSection('more', 'content');
     } catch (e) {
         const errEl = document.getElementById('more-error');
@@ -1590,7 +1593,7 @@ async function loadMore() {
     }
 }
 
-function renderMore(comparison) {
+function renderMore(comparison, rates) {
     const container = document.getElementById('more-content');
     const compItems = comparison.items || [];
     const expComp = compItems.find(c => c.type === 'expense');
@@ -1622,9 +1625,40 @@ function renderMore(comparison) {
         `;
     }
 
+    let ratesHtml = '';
+    const rateItems = rates?.rates || [];
+    if (rateItems.length > 0) {
+        const rateRows = rateItems.map((r, i) => `
+            <div class="flex justify-between items-center py-1.5" style="border-bottom:0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 10%, transparent)" id="rate-row-${i}">
+                <span class="text-sm font-medium">1 ${r.from}</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm rate-display-${i}" style="color:${r.custom ? 'var(--tg-theme-link-color)' : 'var(--tg-theme-hint-color)'}">${fmt(r.rate)} ${currentCurrency}</span>
+                    <button class="rate-edit-btn" data-idx="${i}" data-from="${r.from}" data-rate="${r.rate}" data-custom="${r.custom}" style="font-size:12px;padding:2px 6px;border:none;background:none;cursor:pointer;opacity:0.5">✏️</button>
+                </div>
+            </div>
+            <div class="hidden rate-edit-form-${i} flex items-center gap-2 py-1.5" style="border-bottom:0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 10%, transparent)">
+                <span class="text-sm">1 ${r.from} =</span>
+                <input type="number" step="0.01" value="${r.rate}" class="rate-input" style="width:100px;padding:4px 8px;border:1px solid var(--tg-theme-hint-color);border-radius:6px;background:var(--tg-theme-bg-color);color:var(--tg-theme-text-color);font-size:14px" />
+                <span class="text-sm">${currentCurrency}</span>
+                <button class="rate-save-btn" data-idx="${i}" data-from="${r.from}" style="font-size:12px;padding:2px 8px;border:none;background:var(--tg-theme-button-color);color:var(--tg-theme-button-text-color);border-radius:6px;cursor:pointer">✓</button>
+                <button class="rate-cancel-btn" data-idx="${i}" style="font-size:12px;padding:2px 8px;border:none;background:var(--tg-theme-secondary-bg-color);color:var(--tg-theme-text-color);border-radius:6px;cursor:pointer">✕</button>
+                ${r.custom ? `<button class="rate-reset-btn" data-idx="${i}" data-from="${r.from}" style="font-size:11px;padding:2px 6px;border:none;background:none;color:var(--color-expense);cursor:pointer">↩</button>` : ''}
+            </div>
+        `).join('');
+        const updatedAt = rates.updated_at ? new Date(rates.updated_at).toLocaleString('ru-RU', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+        ratesHtml = `
+            <div class="text-sm font-semibold mb-2">💱 Курсы валют</div>
+            <div class="card mb-4" id="rates-card">
+                ${rateRows}
+                ${updatedAt ? `<div class="text-xs mt-2" style="color:var(--tg-theme-hint-color)">Обновлено: ${updatedAt}</div>` : ''}
+            </div>
+        `;
+    }
+
     container.innerHTML = `
         <div class="fade-in">
             ${compHtml}
+            ${ratesHtml}
             <div class="space-y-3">
                 <button class="btn-primary" id="btn-refresh">🔄 Пере-категоризация</button>
                 <button class="btn-primary" id="btn-export" style="background:var(--tg-theme-secondary-bg-color);color:var(--tg-theme-text-color);box-shadow:var(--card-shadow)">📥 Экспорт CSV</button>
@@ -1634,6 +1668,55 @@ function renderMore(comparison) {
 
     document.getElementById('btn-refresh').addEventListener('click', handleRefresh);
     document.getElementById('btn-export').addEventListener('click', handleExport);
+
+    document.querySelectorAll('.rate-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = btn.dataset.idx;
+            document.getElementById(`rate-row-${idx}`).classList.add('hidden');
+            document.querySelector(`.rate-edit-form-${idx}`).classList.remove('hidden');
+            document.querySelector(`.rate-edit-form-${idx} .rate-input`).focus();
+        });
+    });
+
+    document.querySelectorAll('.rate-cancel-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = btn.dataset.idx;
+            document.querySelector(`.rate-edit-form-${idx}`).classList.add('hidden');
+            document.getElementById(`rate-row-${idx}`).classList.remove('hidden');
+        });
+    });
+
+    document.querySelectorAll('.rate-save-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idx = btn.dataset.idx;
+            const from = btn.dataset.from;
+            const input = document.querySelector(`.rate-edit-form-${idx} .rate-input`);
+            const rate = parseFloat(input.value);
+            if (!rate || rate <= 0) return;
+            btn.disabled = true;
+            try {
+                await api(`/api/report/rates?chat_id=${chatId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({currency_from: from, currency_to: currentCurrency, rate})
+                });
+                showToast('Курс сохранён');
+                loadMore();
+            } catch (e) { showToast('Ошибка сохранения'); btn.disabled = false; }
+        });
+    });
+
+    document.querySelectorAll('.rate-reset-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const from = btn.dataset.from;
+            btn.disabled = true;
+            try {
+                await api(`/api/report/rates?chat_id=${chatId}&currency_from=${from}&currency_to=${currentCurrency}`, {method: 'DELETE'});
+                showToast('Курс сброшен');
+                loadMore();
+            } catch (e) { showToast('Ошибка сброса'); btn.disabled = false; }
+        });
+    });
 }
 
 async function handleRefresh() {

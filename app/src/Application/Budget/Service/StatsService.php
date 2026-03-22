@@ -220,8 +220,8 @@ class StatsService
             }
         }
 
-        $converted = $this->convertCurrencies($cached, $currency);
-        $statsText = $this->formatStats($converted, $currency, $verbose);
+        $converted = $this->convertCurrencies($cached, $currency, $chatId);
+        $statsText = $this->formatStats($converted, $currency, $verbose, $chatId);
 
         return [
             'text' => $statsText,
@@ -306,7 +306,7 @@ class StatsService
         return [];
     }
 
-    private function convertCurrencies(array $items, string $targetCurrency): array
+    private function convertCurrencies(array $items, string $targetCurrency, ?int $chatId = null): array
     {
         $result = [];
 
@@ -315,7 +315,9 @@ class StatsService
             $currency = strtoupper($item['currency'] ?? $targetCurrency);
 
             if ($currency !== $targetCurrency) {
-                $converted = $this->exchangeRateService->convert($amount, $currency, $targetCurrency);
+                $converted = $chatId !== null
+                    ? $this->exchangeRateService->convertForChat($amount, $currency, $targetCurrency, $chatId)
+                    : $this->exchangeRateService->convert($amount, $currency, $targetCurrency);
                 if ($converted !== null) {
                     $amount = $converted;
                 }
@@ -337,7 +339,7 @@ class StatsService
         return $result;
     }
 
-    private function formatStats(array $items, string $currency, bool $verbose = false): string
+    private function formatStats(array $items, string $currency, bool $verbose = false, ?int $chatId = null): string
     {
         $income = array_filter($items, fn($i) => $i['type'] === 'income');
         $expenses = array_filter($items, fn($i) => $i['type'] === 'expense');
@@ -404,6 +406,25 @@ class StatsService
             $currentBalance = $balanceSum + $adjustments;
             $lines[] = '';
             $lines[] = "<b>Итого остаток:</b> " . $this->formatAmount($currentBalance) . " {$currency}";
+        }
+
+        $usedCurrencies = array_unique(array_filter(
+            array_column($items, 'original_currency'),
+            fn(string $c) => $c !== $currency
+        ));
+
+        if (!empty($usedCurrencies)) {
+            sort($usedCurrencies);
+            $lines[] = '';
+            $lines[] = '<b>💱 Курсы</b>';
+            foreach ($usedCurrencies as $code) {
+                $rate = $chatId !== null
+                    ? $this->exchangeRateService->convertForChat(1.0, $code, $currency, $chatId)
+                    : $this->exchangeRateService->convert(1.0, $code, $currency);
+                if ($rate !== null) {
+                    $lines[] = "1 {$code} = " . number_format($rate, 2) . " {$currency}";
+                }
+            }
         }
 
         return implode("\n", $lines);

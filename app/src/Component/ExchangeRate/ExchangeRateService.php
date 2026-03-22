@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Component\ExchangeRate;
 
+use App\Component\ExchangeRate\Repository\CustomExchangeRateRepository;
 use App\Component\ExchangeRate\Repository\ExchangeRateRepository;
 use App\Service\Config\Config;
 use DI\Attribute\Injectable;
@@ -19,6 +20,7 @@ class ExchangeRateService
     public function __construct(
         private ExchangeRateClientFactory $clientFactory,
         private ExchangeRateRepository $repository,
+        private CustomExchangeRateRepository $customRepository,
         private Config $config
     ) {
         $this->currencies = $this->config->get('exchangerate.currencies', ['USD', 'EUR', 'THB']);
@@ -103,6 +105,25 @@ class ExchangeRateService
         $amountInUsd = $amount / $fromRate;
 
         return $amountInUsd * $toRate;
+    }
+
+    public function convertForChat(float $amount, string $fromCurrency, string $toCurrency, int $chatId): ?float
+    {
+        if ($fromCurrency === $toCurrency) {
+            return $amount;
+        }
+
+        $customRate = $this->customRepository->getRate($chatId, $fromCurrency, $toCurrency);
+        if ($customRate !== null) {
+            return $amount * $customRate;
+        }
+
+        $reverseRate = $this->customRepository->getRate($chatId, $toCurrency, $fromCurrency);
+        if ($reverseRate !== null && $reverseRate > 0) {
+            return $amount / $reverseRate;
+        }
+
+        return $this->convert($amount, $fromCurrency, $toCurrency);
     }
 
     public function getAllRatesToUsd(): array
