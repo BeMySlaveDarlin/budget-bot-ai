@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\E2E\Meals;
 
-use App\Application\Meals\Repository\BotConfigRepository;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Application\Meals\Task\MealsWebhookProcessTask;
 use App\Component\LLM\Client\Contract\LLMClientInterface;
 use App\Component\LLM\DTO\ChatRequest;

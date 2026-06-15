@@ -8,6 +8,7 @@ use App\Application\Budget\DTO\CommandContext;
 use App\Application\Budget\Handler\CallbackHandler;
 use App\Application\Budget\Handler\CommandDispatcher;
 use App\Application\Budget\Handler\MessageHandler;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Component\Telegram\Repository\ChatRepository;
 use App\Component\Telegram\Repository\ChatUserRepository;
 use App\Component\Telegram\Repository\UpdateRepository;
@@ -33,6 +34,16 @@ class WebhookProcessTask extends AbstractTask
             isset($update['edited_message']) => 'edited_message',
             default => 'message',
         };
+
+        $updateTopicId = $update['message']['message_thread_id']
+            ?? $update['edited_message']['message_thread_id']
+            ?? $update['callback_query']['message']['message_thread_id']
+            ?? null;
+
+        $boundTopicId = $this->getService(BotConfigRepository::class)->getBoundTopicId('budget');
+        if ($boundTopicId !== null && $updateTopicId !== $boundTopicId) {
+            return ['status' => 'ok', 'type' => 'ignored_topic'];
+        }
 
         $this->getLogger()->info('[Webhook] Processing update', [
             'update_id' => $updateId,

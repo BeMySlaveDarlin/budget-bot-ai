@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Meals\Service;
 
-use App\Application\Meals\Repository\BotConfigRepository;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Application\Meals\Repository\MealCookHistoryRepository;
 use App\Application\Meals\Repository\MealFactRepository;
 use App\Application\Meals\Repository\MealInventoryRepository;

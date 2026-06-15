@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Application\Meals\Task;
 
-use App\Application\Meals\Repository\BotConfigRepository;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Application\Meals\Service\MealChatService;
 use App\Application\Meals\Service\MealSessionService;
 use App\Component\Telegram\Repository\ChatRepository;
 use App\Component\Telegram\Repository\ChatUserRepository;
+use App\Component\Telegram\Repository\UpdateRepository;
 use App\Component\Telegram\Repository\UserRepository;
 use App\Component\Telegram\TelegramClient;
 use App\Service\Config\Config;
@@ -40,6 +41,9 @@ class MealsWebhookProcessTask extends AbstractTask
             return ['status' => 'ok', 'type' => 'ignored_topic'];
         }
 
+        $updateId = (int) ($update['update_id'] ?? 0);
+        $this->getService(UpdateRepository::class)->create($updateId, 'message', $update);
+
         $user = $this->getService(UserRepository::class)->findOrCreate($fromTg);
         $chat = $this->getService(ChatRepository::class)->findOrCreate($chatTg);
         $isPrivateChat = ($chatTg['type'] ?? '') === 'private';
@@ -56,6 +60,8 @@ class MealsWebhookProcessTask extends AbstractTask
         if ($reply !== null && $reply !== '') {
             $this->send((int) $chatTg['id'], $reply, $topicId);
         }
+
+        $this->getService(UpdateRepository::class)->markProcessed($updateId);
 
         return ['status' => 'ok', 'type' => 'message'];
     }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service\Console\Handler;
 
-use App\Application\Meals\Repository\BotConfigRepository;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Component\LLM\LLMClientFactory;
 use App\Service\Attribute\Command;
 use App\Service\Config\Config;

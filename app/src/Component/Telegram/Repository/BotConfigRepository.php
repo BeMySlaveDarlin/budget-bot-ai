@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Application\Meals\Repository;
+namespace App\Component\Telegram\Repository;
 
 use App\Service\Database\DatabaseConnection;
 use DI\Attribute\Injectable;
