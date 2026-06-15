@@ -17,7 +17,7 @@ class BotConfigSeeder implements SeederInterface
     {
         $bindings = [
             ['budget', 'claude'],
-            ['meals', 'openrouter-deepseek'],
+            ['meals', 'openrouter-gemma'],
         ];
 
         foreach ($bindings as [$botCode, $providerCode]) {

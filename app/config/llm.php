@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'default_provider' => 'claude',
+    'default_provider' => $_ENV['LLM_DEFAULT_PROVIDER'] ?? 'claude',
     'daily_token_limit' => (int) ($_ENV['LLM_DAILY_TOKEN_LIMIT'] ?? 1000000),
 
     'anthropic_api_key' => $_ENV['ANTHROPIC_API_KEY'] ?? '',

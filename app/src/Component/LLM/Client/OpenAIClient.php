@@ -52,7 +52,7 @@ class OpenAIClient extends AbstractLLMClient
 
         if (!empty($request->tools)) {
             $body['tools'] = $this->formatTools($request->tools);
-            $body['tool_choice'] = 'auto';
+            $body['tool_choice'] = 'required';
         }
 
         if ($request->getOption('json_mode') === true) {
