@@ -69,6 +69,28 @@ final class MealFactRepository
         ) > 0;
     }
 
+    public function existsActiveByText(int $chatId, string $fact): bool
+    {
+        $row = $this->db->queryFirst(
+            "SELECT EXISTS(
+                SELECT 1 FROM meal_facts WHERE chat_id = ? AND fact = ? AND is_active = TRUE
+             ) AS found",
+            [$chatId, $fact]
+        );
+
+        return (bool) ($row['found'] ?? false);
+    }
+
+    public function deactivateByText(int $chatId, string $fact): bool
+    {
+        return $this->db->update(
+            "UPDATE meal_facts
+             SET is_active = FALSE, updated_at = NOW()
+             WHERE chat_id = ? AND fact = ? AND is_active = TRUE",
+            [$chatId, $fact]
+        ) > 0;
+    }
+
     public function deactivate(int $id, int $chatId): bool
     {
         return $this->db->update(

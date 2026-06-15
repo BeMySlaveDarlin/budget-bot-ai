@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Application\Meals\Task;
 
-use App\Component\Telegram\Repository\BotConfigRepository;
+use App\Application\Meals\DTO\MealReply;
 use App\Application\Meals\Service\MealChatService;
 use App\Application\Meals\Service\MealSessionService;
+use App\Component\Telegram\Repository\BotConfigRepository;
 use App\Component\Telegram\Repository\ChatRepository;
 use App\Component\Telegram\Repository\ChatUserRepository;
 use App\Component\Telegram\Repository\UpdateRepository;
@@ -55,10 +56,14 @@ class MealsWebhookProcessTask extends AbstractTask
             'is_command' => str_starts_with($text, '/'),
         ]);
 
-        $reply = $this->route($text, (int) $chat['id'], (int) $user['id'], $topicId, $chatTg);
+        $reply = $this->route($text, (int) $chat['id'], (int) $user['id'], $topicId);
 
-        if ($reply !== null && $reply !== '') {
-            $this->send((int) $chatTg['id'], $reply, $topicId);
+        if ($reply->openFridge) {
+            $this->sendFridgeButton((int) $chat['id'], $topicId, $chatTg);
+        }
+
+        if ($reply->text !== null && $reply->text !== '') {
+            $this->send((int) $chatTg['id'], $reply->text, $topicId);
         }
 
         $this->getService(UpdateRepository::class)->markProcessed($updateId);
@@ -66,28 +71,30 @@ class MealsWebhookProcessTask extends AbstractTask
         return ['status' => 'ok', 'type' => 'message'];
     }
 
-    private function route(string $text, int $chatId, int $userId, ?int $topicId, array $chatTg): ?string
+    private const array FRIDGE_PHRASES = [
+        'открой холодильник', 'покажи холодильник', 'что в холодильнике', 'что есть', 'холодильник',
+    ];
+
+    private function route(string $text, int $chatId, int $userId, ?int $topicId): MealReply
     {
         if ($text === '') {
-            return null;
+            return MealReply::text(null);
         }
 
         $session = $this->getService(MealSessionService::class);
 
         if (str_starts_with($text, '/start') || str_starts_with($text, '/help')) {
-            return $this->helpText();
+            return MealReply::text($this->helpText());
         }
 
         if (str_starts_with($text, '/new')) {
             $session->reset($chatId);
 
-            return 'Начал новую сессию — прошлый разговор забыт. Что приготовить?';
+            return MealReply::text('Начал новую сессию — прошлый разговор забыт. Что приготовить?');
         }
 
-        if (str_starts_with($text, '/fridge')) {
-            $this->sendFridgeButton($chatId, $topicId, $chatTg);
-
-            return null;
+        if (str_starts_with($text, '/fridge') || in_array(mb_strtolower(trim($text)), self::FRIDGE_PHRASES, true)) {
+            return MealReply::fridge();
         }
 
         $sessionId = $session->current($chatId);

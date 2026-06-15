@@ -86,4 +86,27 @@ final class MealInventoryRepository
             [$id, $chatId]
         ) > 0;
     }
+
+    public function upsertByName(int $chatId, string $name, bool $available, ?float $quantity, ?string $unit): void
+    {
+        $this->db->execute(
+            "INSERT INTO meal_inventory (chat_id, name, available, quantity, unit, updated_at)
+             VALUES (?, ?, ?, ?, ?, NOW())
+             ON CONFLICT (chat_id, name) DO UPDATE
+             SET available = EXCLUDED.available,
+                 quantity = COALESCE(EXCLUDED.quantity, meal_inventory.quantity),
+                 unit = COALESCE(EXCLUDED.unit, meal_inventory.unit),
+                 updated_at = NOW()",
+            [$chatId, $name, $available, $quantity, $unit]
+        );
+    }
+
+    public function setAvailabilityByName(int $chatId, string $name, bool $available): bool
+    {
+        return $this->db->update(
+            "UPDATE meal_inventory SET available = ?, updated_at = NOW()
+             WHERE chat_id = ? AND name = ?",
+            [$available, $chatId, $name]
+        ) > 0;
+    }
 }

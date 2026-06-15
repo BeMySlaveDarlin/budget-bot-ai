@@ -9,6 +9,7 @@ use App\Application\Meals\Task\MealsWebhookProcessTask;
 use App\Component\LLM\Client\Contract\LLMClientInterface;
 use App\Component\LLM\DTO\ChatRequest;
 use App\Component\LLM\DTO\ChatResponse;
+use App\Component\LLM\DTO\ToolCall;
 use App\Component\LLM\DTO\Usage;
 use App\Component\LLM\Exception\LLMException;
 use App\Component\LLM\LLMClientFactory;
@@ -184,6 +185,32 @@ final class MealsWebhookProcessTaskTest extends TestCase
         $this->assertSame(['status' => 'ok', 'type' => 'ignored_topic'], $result);
     }
 
+    public function testAgentLoopExecutesAddInventoryTool(): void
+    {
+        $toolCall = new ToolCall('call-1', 'add_inventory', ['items' => [['name' => 'молоко', 'quantity' => 1, 'unit' => 'л']]]);
+
+        $this->llmClient->shouldReceive('chat')
+            ->twice()
+            ->andReturn(
+                new ChatResponse(null, [$toolCall], new Usage(10, 5, 15), 'tool_calls'),
+                $this->llmResponse('🧺 Добавил молоко.')
+            );
+
+        $this->usage->shouldReceive('logUsage')->once()->with(Mockery::type('string'), 20, 10);
+        $this->expectTelegramSend('🧺 Добавил молоко.');
+
+        $result = $this->runTask($this->update('купил молоко'));
+
+        $this->assertSame(['status' => 'ok', 'type' => 'message'], $result);
+
+        $chat = $this->db->queryFirst('SELECT id FROM telegram_chats WHERE telegram_chat_id = ?', [self::TG_CHAT_ID]);
+        $names = array_column(
+            $this->db->query('SELECT name FROM meal_inventory WHERE chat_id = ?', [(int) $chat['id']]),
+            'name'
+        );
+        $this->assertContains('молоко', $names);
+    }
+
     private function runTask(array $update): mixed
     {
         $task = MealsWebhookProcessTask::fromPayload(['update' => $update]);
@@ -249,10 +276,12 @@ final class MealsWebhookProcessTaskTest extends TestCase
             $this->container->get(CacheInterface::class)->delete("meals:session:{$chat['id']}");
         }
 
-        $this->db->execute(
-            'DELETE FROM meal_messages WHERE chat_id IN (SELECT id FROM telegram_chats WHERE telegram_chat_id = ?)',
-            [self::TG_CHAT_ID]
-        );
+        foreach (['meal_messages', 'meal_inventory', 'meal_facts'] as $table) {
+            $this->db->execute(
+                "DELETE FROM {$table} WHERE chat_id IN (SELECT id FROM telegram_chats WHERE telegram_chat_id = ?)",
+                [self::TG_CHAT_ID]
+            );
+        }
         $this->db->execute(
             'DELETE FROM telegram_chat_users WHERE chat_id IN (SELECT id FROM telegram_chats WHERE telegram_chat_id = ?)',
             [self::TG_CHAT_ID]

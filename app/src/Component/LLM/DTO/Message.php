@@ -10,8 +10,14 @@ readonly class Message
         public string $role,
         public string $content,
         public ?string $name = null,
-        public ?string $toolCallId = null
+        public ?string $toolCallId = null,
+        public ?array $toolCalls = null
     ) {
+    }
+
+    public static function assistantWithToolCalls(array $toolCalls, string $content = ''): self
+    {
+        return new self('assistant', $content, null, null, $toolCalls);
     }
 
     public static function system(string $content): self

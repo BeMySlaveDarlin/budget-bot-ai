@@ -46,7 +46,12 @@ final class MealsChatCommand implements CommandInterface
 
         $reply = $this->chat->handle((int) $chat['id'], (int) $user['id'], null, $sessionId, $text);
 
-        echo "BOT>  {$reply}\n";
+        if ($reply->openFridge) {
+            echo "BOT>  [открывает холодильник кнопкой]\n";
+        }
+        if ($reply->text !== null && $reply->text !== '') {
+            echo "BOT>  {$reply->text}\n";
+        }
 
         return 0;
     }

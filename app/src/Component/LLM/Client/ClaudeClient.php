@@ -54,7 +54,11 @@ class ClaudeClient extends AbstractLLMClient
 
         if (!empty($request->tools)) {
             $body['tools'] = $this->formatTools($request->tools);
-            $body['tool_choice'] = ['type' => 'any'];
+            $body['tool_choice'] = match ((string) $request->getOption('tool_choice', 'auto')) {
+                'required' => ['type' => 'any'],
+                'none' => ['type' => 'none'],
+                default => ['type' => 'auto'],
+            };
         }
 
         return $body;

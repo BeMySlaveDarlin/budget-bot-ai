@@ -52,7 +52,7 @@ class OpenAIClient extends AbstractLLMClient
 
         if (!empty($request->tools)) {
             $body['tools'] = $this->formatTools($request->tools);
-            $body['tool_choice'] = 'required';
+            $body['tool_choice'] = (string) $request->getOption('tool_choice', 'auto');
         }
 
         if ($request->getOption('json_mode') === true) {
@@ -138,6 +138,20 @@ class OpenAIClient extends AbstractLLMClient
 
                 if ($message->toolCallId !== null) {
                     $formatted['tool_call_id'] = $message->toolCallId;
+                }
+
+                if ($message->toolCalls !== null) {
+                    $formatted['tool_calls'] = array_map(
+                        static fn (ToolCall $tc): array => [
+                            'id' => $tc->id,
+                            'type' => 'function',
+                            'function' => [
+                                'name' => $tc->name,
+                                'arguments' => json_encode($tc->arguments, JSON_UNESCAPED_UNICODE),
+                            ],
+                        ],
+                        $message->toolCalls
+                    );
                 }
 
                 $messages[] = $formatted;

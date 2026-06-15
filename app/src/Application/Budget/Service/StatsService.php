@@ -142,7 +142,8 @@ class StatsService
                 $maxTokens = (int) $this->config->get('llm.providers.claude.max_tokens', 64000);
                 $request = $request
                     ->withTools([$tool])
-                    ->withMaxTokens($maxTokens);
+                    ->withMaxTokens($maxTokens)
+                    ->withOption('tool_choice', 'required');
 
                 $this->logger->info('[Stats] Sending LLM request', [
                     'max_tokens' => $maxTokens,
