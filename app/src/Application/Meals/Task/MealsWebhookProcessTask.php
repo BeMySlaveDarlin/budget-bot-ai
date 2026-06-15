@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\Meals\Task;
 
+use App\Application\Meals\Repository\BotConfigRepository;
 use App\Application\Meals\Service\MealChatService;
 use App\Application\Meals\Service\MealSessionService;
 use App\Component\Telegram\Repository\ChatRepository;
@@ -33,6 +34,11 @@ class MealsWebhookProcessTask extends AbstractTask
         $chatTg = $message['chat'];
         $fromTg = $message['from'] ?? [];
         $topicId = $message['message_thread_id'] ?? null;
+
+        $boundTopicId = $this->getService(BotConfigRepository::class)->getBoundTopicId('meals');
+        if ($boundTopicId !== null && $topicId !== $boundTopicId) {
+            return ['status' => 'ok', 'type' => 'ignored_topic'];
+        }
 
         $user = $this->getService(UserRepository::class)->findOrCreate($fromTg);
         $chat = $this->getService(ChatRepository::class)->findOrCreate($chatTg);

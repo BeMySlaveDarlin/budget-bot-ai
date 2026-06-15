@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\E2E\Meals;
 
+use App\Application\Meals\Repository\BotConfigRepository;
 use App\Application\Meals\Task\MealsWebhookProcessTask;
 use App\Component\LLM\Client\Contract\LLMClientInterface;
 use App\Component\LLM\DTO\ChatRequest;
@@ -171,6 +172,18 @@ final class MealsWebhookProcessTaskTest extends TestCase
         $this->assertSame($expected, $messages[0]['content']);
     }
 
+    public function testIgnoresMessageFromTopicOtherThanBound(): void
+    {
+        $this->container->get(BotConfigRepository::class)->setBoundTopicId('meals', 555);
+
+        $this->llmClient->shouldNotReceive('chat');
+        $this->telegram->shouldNotReceive('sendMessage');
+
+        $result = $this->runTask($this->update('что приготовить?'));
+
+        $this->assertSame(['status' => 'ok', 'type' => 'ignored_topic'], $result);
+    }
+
     private function runTask(array $update): mixed
     {
         $task = MealsWebhookProcessTask::fromPayload(['update' => $update]);
@@ -225,6 +238,8 @@ final class MealsWebhookProcessTaskTest extends TestCase
 
     private function cleanupTestData(): void
     {
+        $this->container->get(BotConfigRepository::class)->setBoundTopicId('meals', null);
+
         $chat = $this->db->queryFirst(
             'SELECT id FROM telegram_chats WHERE telegram_chat_id = ?',
             [self::TG_CHAT_ID]
