@@ -120,7 +120,8 @@ final class MealChatService
             return MealReply::text(self::FALLBACK_REPLY);
         }
 
-        if ($reply !== '') {
+        // При открытии холодильника показываем только кнопку — текст LLM лишний.
+        if ($reply !== '' && !$openFridge) {
             $this->messages->create($chatId, null, $topicId, $sessionId, 'assistant', $reply);
 
             if ($userId !== null) {
@@ -137,7 +138,7 @@ final class MealChatService
         ]);
 
         return $openFridge
-            ? MealReply::fridge($reply !== '' ? $reply : null)
+            ? MealReply::fridge(null)
             : MealReply::text($reply);
     }
 

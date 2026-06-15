@@ -93,7 +93,8 @@ class MealsWebhookProcessTask extends AbstractTask
             return MealReply::text('Начал новую сессию — прошлый разговор забыт. Что приготовить?');
         }
 
-        if (str_starts_with($text, '/fridge') || in_array(mb_strtolower(trim($text)), self::FRIDGE_PHRASES, true)) {
+        $normalized = rtrim(mb_strtolower(trim($text)), " \t\n?!.,");
+        if (str_starts_with($text, '/fridge') || in_array($normalized, self::FRIDGE_PHRASES, true)) {
             return MealReply::fridge();
         }
 
