@@ -11,9 +11,11 @@ use App\Service\Http\Contract\ContextMiddlewareInterface;
 use Psr\Log\LoggerInterface;
 
 #[Middleware(priority: 90)]
-class LoggingMiddleware implements ContextMiddlewareInterface
+final class LoggingMiddleware implements ContextMiddlewareInterface
 {
     private const array EXCLUDED_PATHS = ['/metrics', '/health', '/favicon.ico'];
+
+    private const array SENSITIVE_QUERY_KEYS = ['sig', 'signature', 'hash', 'token', 'secret'];
 
     public function __construct(
         private LoggerInterface $logger
@@ -30,13 +32,14 @@ class LoggingMiddleware implements ContextMiddlewareInterface
             return;
         }
 
+        $maskedPath = $this->maskPath($path);
         $startTime = microtime(true);
         $startMemory = memory_get_usage(true);
 
         $this->logger->info('HTTP request started', [
             'method' => $request->getMethod(),
-            'path' => $request->getPath(),
-            'query' => $request->getQueryParams(),
+            'path' => $maskedPath,
+            'query' => $this->maskQuery($request->getQueryParams()),
             'user_agent' => $request->getHeader('User-Agent'),
         ]);
 
@@ -51,7 +54,7 @@ class LoggingMiddleware implements ContextMiddlewareInterface
 
             $this->logger->info('HTTP request completed', [
                 'method' => $request->getMethod(),
-                'path' => $request->getPath(),
+                'path' => $maskedPath,
                 'status' => $response->getStatusCode(),
                 'duration_ms' => round($duration, 2),
                 'memory_used_bytes' => $memoryUsed,
@@ -60,7 +63,7 @@ class LoggingMiddleware implements ContextMiddlewareInterface
             if ($duration > 1000) {
                 $this->logger->warning('Slow HTTP request', [
                     'method' => $request->getMethod(),
-                    'path' => $request->getPath(),
+                    'path' => $maskedPath,
                     'duration_ms' => round($duration, 2),
                 ]);
             }
@@ -70,12 +73,37 @@ class LoggingMiddleware implements ContextMiddlewareInterface
 
             $this->logger->error('HTTP request failed', [
                 'method' => $request->getMethod(),
-                'path' => $request->getPath(),
+                'path' => $maskedPath,
                 'duration_ms' => round($duration, 2),
                 'error' => $e->getMessage(),
             ]);
 
             throw $e;
         }
+    }
+
+    private function maskPath(string $path): string
+    {
+        return preg_replace('#^(/telegram(?:/budget|/meal)?/)[^/]+#', '$1***', $path);
+    }
+
+    /**
+     * @param array<int|string, mixed> $query
+     * @return array<int|string, mixed>
+     */
+    private function maskQuery(array $query): array
+    {
+        $masked = [];
+
+        foreach ($query as $key => $value) {
+            if (in_array(strtolower((string) $key), self::SENSITIVE_QUERY_KEYS, true)) {
+                $masked[$key] = '***';
+                continue;
+            }
+
+            $masked[$key] = is_array($value) ? $this->maskQuery($value) : $value;
+        }
+
+        return $masked;
     }
 }

@@ -155,6 +155,10 @@ class ExchangeRateService
         $lines[] = "";
 
         foreach ($rates as $rate) {
+            if ((float) $rate['rate'] <= 0) {
+                continue;
+            }
+
             $rateToDisplay = $displayRate / (float) $rate['rate'];
             $formatted = number_format($rateToDisplay, 2);
             $lines[] = "1 {$rate['currency_from']} = {$formatted} {$displayCurrency}";
@@ -181,6 +185,9 @@ class ExchangeRateService
         foreach ($rates as $rate) {
             $code = $rate['currency_from'];
             if ($code === $displayCurrency) {
+                continue;
+            }
+            if ((float) $rate['rate'] <= 0) {
                 continue;
             }
             $result[$code] = round($displayRate / (float) $rate['rate'], 2);

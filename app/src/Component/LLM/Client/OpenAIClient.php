@@ -64,13 +64,22 @@ class OpenAIClient extends AbstractLLMClient
 
     protected function buildPingBody(string $question): array
     {
-        return [
-            'model' => 'gpt-4o-mini',
-            'max_tokens' => 10,
+        $model = $this->getDefaultModel() ?: 'gpt-4o-mini';
+
+        $body = [
+            'model' => $model,
             'messages' => [
                 ['role' => 'user', 'content' => $question],
             ],
         ];
+
+        if ($this->usesCompletionTokens($model)) {
+            $body['max_completion_tokens'] = 16;
+        } else {
+            $body['max_tokens'] = 16;
+        }
+
+        return $body;
     }
 
     protected function extractPingResponse(array $data): string
@@ -80,9 +89,12 @@ class OpenAIClient extends AbstractLLMClient
 
     private function usesCompletionTokens(string $model): bool
     {
-        return str_starts_with($model, 'gpt-5')
-            || str_starts_with($model, 'o1')
-            || str_starts_with($model, 'o3');
+        $slashPos = strrpos($model, '/');
+        $name = $slashPos === false ? $model : substr($model, $slashPos + 1);
+
+        return str_starts_with($name, 'gpt-5')
+            || str_starts_with($name, 'o1')
+            || str_starts_with($name, 'o3');
     }
 
     protected function parseResponse(array $response): ChatResponse

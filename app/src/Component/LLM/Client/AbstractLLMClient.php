@@ -153,6 +153,9 @@ abstract class AbstractLLMClient implements LLMClientInterface
             'verify' => true,
             'handler' => $stack,
             'decode_content' => true,
+            'headers' => [
+                'Accept-Encoding' => 'identity',
+            ],
         ]);
     }
 

@@ -21,7 +21,7 @@ class CallbackHandler
 
     public function handle(array $callback, ?int $topicId = null): void
     {
-        $callbackId = $callback['id'];
+        $callbackId = $callback['id'] ?? '';
         $data = $callback['data'] ?? '';
         $message = $callback['message'] ?? null;
         $chatTgId = $message['chat']['id'] ?? null;
@@ -59,7 +59,7 @@ class CallbackHandler
             return ['text' => 'Chat not found', 'alert' => true];
         }
 
-        if ($subAction === 'currency' && in_array($value, ['THB', 'USD', 'EUR', 'RUB'])) {
+        if ($subAction === 'currency' && in_array($value, ['THB', 'USD', 'EUR', 'RUB'], true)) {
             $this->chatRepo->setCurrency($chat['id'], $value);
 
             return ['text' => "Валюта: {$value}", 'alert' => false];

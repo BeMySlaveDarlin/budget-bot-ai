@@ -8,6 +8,7 @@ use App\Service\Attribute\Route;
 use App\Service\Http\Context\Request\Request;
 use App\Service\Http\Context\Response\Response;
 
+#[Route('/budget', 'GET')]
 #[Route('/report', 'GET')]
 final class ReportPageHandler
 {

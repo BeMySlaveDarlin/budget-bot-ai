@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Meals</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-hint-color: #999999;
+            --tg-theme-link-color: #2481cc;
+            --tg-theme-button-color: #2481cc;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f0f0f0;
+            --card-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+            --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-full: 9999px;
+            --color-yes: #00C853;
+            --color-yes-light: rgba(0, 200, 83, 0.12);
+            --color-warn: #FF9100;
+            --color-warn-light: rgba(255, 145, 0, 0.12);
+            --color-danger: #FF1744;
+            --color-danger-light: rgba(255, 23, 68, 0.12);
+            --accent: #16A34A;
+            --gradient-fab: linear-gradient(135deg, #16A34A, #0D9488);
+            --gradient-fab-shadow: rgba(13, 148, 136, 0.45);
+            --gradient-active: linear-gradient(135deg, #16A34A, #0D9488);
+        }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body {
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0; padding: 0; padding-bottom: 76px;
+            min-height: 100vh; overflow-x: hidden;
+            line-height: 1.5; -webkit-font-smoothing: antialiased;
+        }
+        .tab-content {
+            display: none; opacity: 0;
+            transition: opacity var(--transition-normal);
+        }
+        .tab-content.active { display: block; opacity: 1; }
+
+        .skeleton {
+            background: linear-gradient(
+                110deg,
+                var(--tg-theme-secondary-bg-color) 30%,
+                color-mix(in srgb, var(--tg-theme-bg-color) 70%, #16A34A10) 50%,
+                var(--tg-theme-secondary-bg-color) 70%
+            );
+            background-size: 300% 100%;
+            animation: shimmer 1.8s ease-in-out infinite;
+            border-radius: var(--radius-md);
+        }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.35s ease-out forwards; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(16px) scale(0.96); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(16px) scale(0.96); }
+        }
+        .toast-in { animation: toastIn 0.3s ease-out forwards; }
+        .toast-out { animation: toastOut 0.25s ease-in forwards; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid var(--tg-theme-secondary-bg-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes slideOut {
+            to { opacity: 0; transform: translateX(40px); max-height: 0; padding-top: 0; padding-bottom: 0; margin: 0; }
+        }
+        .slide-out { animation: slideOut 0.3s ease-in forwards; overflow: hidden; }
+
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+            width: 100%; max-width: 480px;
+            background: color-mix(in srgb, var(--tg-theme-bg-color) 92%, transparent);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-top: 0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 15%, transparent);
+            z-index: 50;
+            padding-bottom: env(safe-area-inset-bottom, 0);
+        }
+        .nav-item {
+            flex: 1; display: flex; flex-direction: column; align-items: center;
+            padding: 8px 0 6px; cursor: pointer;
+            transition: color var(--transition-fast), transform var(--transition-fast);
+            color: var(--tg-theme-hint-color); font-size: 10px; gap: 3px;
+            -webkit-user-select: none; user-select: none;
+            position: relative; font-weight: 500; letter-spacing: 0.02em;
+        }
+        .nav-item.active { color: var(--accent); }
+        .nav-item.active::after {
+            content: '';
+            position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 24px; height: 3px; border-radius: 0 0 3px 3px;
+            background: var(--gradient-active);
+        }
+        .nav-item:active { transform: scale(0.92); }
+        .nav-item .nav-icon { font-size: 20px; line-height: 1; position: relative; }
+        .nav-badge {
+            position: absolute; top: -6px; right: -10px;
+            min-width: 16px; height: 16px; padding: 0 4px;
+            border-radius: 8px; background: var(--color-danger);
+            color: #fff; font-size: 10px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            line-height: 1; box-shadow: 0 1px 4px rgba(255,23,68,0.4);
+        }
+
+        .card {
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: var(--radius-lg); padding: 16px;
+            box-shadow: var(--card-shadow);
+            transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+        }
+
+        .btn-primary {
+            background: var(--gradient-fab);
+            color: #fff;
+            border: none; border-radius: var(--radius-md); padding: 13px 20px;
+            font-size: 15px; cursor: pointer; width: 100%;
+            transition: opacity var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+            font-weight: 600; letter-spacing: 0.01em;
+            box-shadow: 0 3px 12px var(--gradient-fab-shadow);
+        }
+        .btn-primary:active { opacity: 0.8; transform: scale(0.98); }
+        .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+        .btn-text {
+            background: none; border: none; cursor: pointer;
+            color: var(--tg-theme-hint-color); font-size: 15px;
+            padding: 13px 20px; width: 100%; font-weight: 500;
+            transition: opacity var(--transition-fast);
+        }
+        .btn-text:active { opacity: 0.6; }
+
+        .section-tabs {
+            display: flex; gap: 8px; margin-bottom: 16px;
+        }
+        .section-tab {
+            flex: 1; padding: 9px 8px; border-radius: var(--radius-full);
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            border: 1.5px solid transparent; text-align: center;
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-hint-color);
+            transition: all var(--transition-fast);
+            position: relative; white-space: nowrap;
+            -webkit-user-select: none; user-select: none;
+        }
+        .section-tab:active { transform: scale(0.96); }
+        .section-tab.active {
+            background: var(--gradient-active);
+            color: #fff;
+            box-shadow: 0 3px 12px rgba(13, 148, 136, 0.3);
+        }
+        .section-tab .count-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            min-width: 18px; height: 18px; padding: 0 5px; margin-left: 5px;
+            border-radius: 9px; font-size: 11px; font-weight: 700;
+            background: var(--color-danger); color: #fff; line-height: 1;
+            vertical-align: middle;
+        }
+        .section-tab.active .count-badge {
+            background: rgba(255,255,255,0.28);
+        }
+
+        input[type="text"], textarea {
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            border: 1.5px solid transparent; border-radius: var(--radius-md);
+            padding: 11px 14px; font-size: 15px; outline: none;
+            width: 100%; box-sizing: border-box;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            font-family: inherit;
+        }
+        textarea { resize: vertical; min-height: 84px; line-height: 1.5; }
+        input[type="text"]:focus, textarea:focus {
+            border-color: var(--tg-theme-button-color);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--tg-theme-button-color) 12%, transparent);
+        }
+        input[type="text"]::placeholder, textarea::placeholder { color: var(--tg-theme-hint-color); }
+
+        input[type="number"] {
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            border: 1.5px solid transparent; border-radius: var(--radius-md);
+            padding: 11px 14px; font-size: 15px; outline: none;
+            width: 100%; box-sizing: border-box;
+            transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+            -moz-appearance: textfield;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"]:focus {
+            border-color: var(--tg-theme-button-color);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--tg-theme-button-color) 12%, transparent);
+        }
+
+        .fab-btn {
+            position: fixed; bottom: 80px; right: 16px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: var(--gradient-fab);
+            color: #fff;
+            border: none; font-size: 28px; line-height: 56px;
+            text-align: center; cursor: pointer;
+            z-index: 60;
+            box-shadow: 0 6px 20px var(--gradient-fab-shadow);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast), opacity var(--transition-fast);
+        }
+        .fab-btn:active { transform: scale(0.9); box-shadow: 0 3px 10px var(--gradient-fab-shadow); }
+        .fab-btn.hidden { opacity: 0; pointer-events: none; transform: scale(0.6); }
+
+        .inv-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 13px 14px; margin-bottom: 8px;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: var(--radius-md);
+            box-shadow: var(--card-shadow);
+            cursor: pointer;
+            transition: opacity var(--transition-fast), transform var(--transition-fast), background var(--transition-fast);
+        }
+        .inv-card:active { transform: scale(0.985); background: color-mix(in srgb, var(--tg-theme-secondary-bg-color) 80%, var(--tg-theme-bg-color)); }
+        .inv-card.unavailable { opacity: 0.5; }
+        .inv-card.unavailable .inv-name { text-decoration: line-through; color: var(--tg-theme-hint-color); }
+
+        .check {
+            width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+            border: 2px solid color-mix(in srgb, var(--tg-theme-hint-color) 45%, transparent);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all var(--transition-fast);
+            background: transparent;
+        }
+        .check:active { transform: scale(0.85); }
+        .check.on {
+            background: var(--color-yes); border-color: var(--color-yes);
+        }
+        .check.on svg { display: block; }
+        .check svg { display: none; }
+
+        .icon-btn {
+            background: none; border: none; cursor: pointer; padding: 6px;
+            color: var(--tg-theme-hint-color); font-size: 15px; line-height: 1;
+            border-radius: 8px; flex-shrink: 0;
+            transition: transform var(--transition-fast), color var(--transition-fast);
+        }
+        .icon-btn:active { transform: scale(1.2); }
+        .icon-btn.danger:active { color: var(--color-danger); }
+
+        .badge {
+            display: inline-flex; align-items: center;
+            padding: 2px 8px; border-radius: var(--radius-full);
+            font-size: 11px; font-weight: 600; line-height: 1.4;
+        }
+        .badge-extracted { background: var(--color-warn-light); color: var(--color-warn); }
+        .badge-manual { background: color-mix(in srgb, var(--tg-theme-link-color) 14%, transparent); color: var(--tg-theme-link-color); }
+        .badge-rec { background: var(--color-yes-light); color: var(--color-yes); }
+        .badge-neutral { background: color-mix(in srgb, var(--tg-theme-hint-color) 16%, transparent); color: var(--tg-theme-hint-color); }
+
+        .conflict-card {
+            border-radius: var(--radius-lg); padding: 14px;
+            margin-bottom: 12px;
+            background: var(--tg-theme-secondary-bg-color);
+            box-shadow: var(--card-shadow);
+            border-left: 3px solid var(--color-warn);
+        }
+        .conflict-old {
+            background: color-mix(in srgb, var(--tg-theme-bg-color) 70%, transparent);
+            border-radius: var(--radius-sm); padding: 8px 10px;
+            font-size: 13px; color: var(--tg-theme-hint-color);
+            margin-bottom: 8px; text-decoration: line-through;
+        }
+        .conflict-new {
+            background: var(--color-yes-light);
+            border-radius: var(--radius-sm); padding: 8px 10px;
+            font-size: 14px; font-weight: 500; margin-bottom: 10px;
+            color: var(--tg-theme-text-color);
+        }
+        .conflict-actions { display: flex; gap: 8px; }
+        .conflict-btn {
+            flex: 1; padding: 9px 6px; border-radius: var(--radius-md);
+            font-size: 12px; font-weight: 600; cursor: pointer;
+            border: 1.5px solid transparent; text-align: center;
+            transition: all var(--transition-fast);
+            background: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+        }
+        .conflict-btn:active { transform: scale(0.95); }
+        .conflict-btn.accept {
+            background: var(--color-yes); color: #fff;
+            box-shadow: 0 2px 8px rgba(0,200,83,0.3);
+        }
+        .conflict-btn.reject { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 35%, transparent); }
+        .conflict-btn.both { color: var(--tg-theme-link-color); border-color: color-mix(in srgb, var(--tg-theme-link-color) 35%, transparent); }
+
+        .history-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 4px;
+            border-bottom: 0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 12%, transparent);
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-dot {
+            width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; background: var(--color-yes-light);
+        }
+
+        .sheet-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 200; opacity: 0;
+            transition: opacity var(--transition-normal);
+            pointer-events: none;
+        }
+        .sheet-overlay.visible { opacity: 1; pointer-events: auto; }
+        .bottom-sheet {
+            position: fixed; bottom: 0; left: 50%; transform: translateX(-50%) translateY(100%);
+            width: 100%; max-width: 480px;
+            background: var(--tg-theme-bg-color);
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            z-index: 201; max-height: 90vh; overflow-y: auto;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0));
+            box-shadow: 0 -4px 24px rgba(0,0,0,0.12);
+        }
+        .bottom-sheet.visible { transform: translateX(-50%) translateY(0); }
+        .sheet-handle {
+            width: 40px; height: 4px; border-radius: 2px;
+            background: var(--gradient-active); opacity: 0.7;
+            margin: 0 auto 16px;
+        }
+        .sheet-field { margin-bottom: 14px; }
+        .sheet-label {
+            display: block; font-size: 13px; font-weight: 600;
+            margin-bottom: 6px; color: var(--tg-theme-hint-color);
+        }
+        .toggle-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 14px; border-radius: var(--radius-md);
+            background: var(--tg-theme-secondary-bg-color);
+        }
+        .switch { position: relative; width: 46px; height: 28px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .track {
+            position: absolute; inset: 0; cursor: pointer;
+            background: color-mix(in srgb, var(--tg-theme-hint-color) 40%, transparent);
+            border-radius: var(--radius-full); transition: background var(--transition-fast);
+        }
+        .switch .track::before {
+            content: ''; position: absolute; height: 22px; width: 22px;
+            left: 3px; bottom: 3px; background: #fff; border-radius: 50%;
+            transition: transform var(--transition-fast);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .switch input:checked + .track { background: var(--color-yes); }
+        .switch input:checked + .track::before { transform: translateX(18px); }
+
+        #toast-container {
+            position: fixed; bottom: 84px; left: 16px; right: 16px;
+            z-index: 300; pointer-events: none;
+            display: flex; flex-direction: column; gap: 8px; align-items: center;
+        }
+        #toast-container .toast {
+            background: var(--tg-theme-secondary-bg-color);
+            color: var(--tg-theme-text-color);
+            border-radius: var(--radius-md); padding: 12px 18px;
+            font-size: 14px; font-weight: 500; text-align: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            max-width: 100%;
+        }
+        h1 { letter-spacing: -0.02em; }
+    </style>
+</head>
+<body>
+
+<div id="app" style="max-width: 480px; margin: 0 auto;">
+    <header class="px-4 pt-4 pb-2">
+        <h1 class="text-lg font-bold" id="page-title">Холодильник</h1>
+    </header>
+
+    <main class="px-4 pb-4">
+        <!-- TAB: FRIDGE -->
+        <div id="tab-fridge" class="tab-content active">
+            <div id="fridge-skeleton">
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+            </div>
+            <div id="fridge-content" class="hidden"></div>
+            <div id="fridge-error" class="hidden"></div>
+        </div>
+
+        <!-- TAB: MEMORY -->
+        <div id="tab-memory" class="tab-content">
+            <div class="section-tabs">
+                <div class="section-tab active" data-sec="facts">Факты</div>
+                <div class="section-tab" data-sec="conflicts">
+                    Конфликты<span class="count-badge hidden" id="sec-conflicts-count">0</span>
+                </div>
+            </div>
+
+            <div id="memory-facts" class="memory-section">
+                <div id="facts-skeleton">
+                    <div class="skeleton h-16 mb-2"></div>
+                    <div class="skeleton h-16 mb-2"></div>
+                    <div class="skeleton h-16 mb-2"></div>
+                </div>
+                <div id="facts-content" class="hidden"></div>
+                <div id="facts-error" class="hidden"></div>
+            </div>
+
+            <div id="memory-conflicts" class="memory-section hidden">
+                <div id="conflicts-skeleton">
+                    <div class="skeleton h-32 mb-3"></div>
+                    <div class="skeleton h-32 mb-3"></div>
+                </div>
+                <div id="conflicts-content" class="hidden"></div>
+                <div id="conflicts-error" class="hidden"></div>
+            </div>
+        </div>
+
+        <!-- TAB: HISTORY -->
+        <div id="tab-history" class="tab-content">
+            <div id="history-skeleton">
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+                <div class="skeleton h-14 mb-2"></div>
+            </div>
+            <div id="history-content" class="hidden"></div>
+            <div id="history-error" class="hidden"></div>
+        </div>
+    </main>
+</div>
+
+<nav class="bottom-nav">
+    <div class="flex">
+        <div class="nav-item active" data-tab="fridge">
+            <span class="nav-icon">&#129387;</span>
+            <span>Холодильник</span>
+        </div>
+        <div class="nav-item" data-tab="memory">
+            <span class="nav-icon">&#129504;<span class="nav-badge hidden" id="nav-conflicts-badge">0</span></span>
+            <span>Память</span>
+        </div>
+        <div class="nav-item" data-tab="history">
+            <span class="nav-icon">&#128220;</span>
+            <span>История</span>
+        </div>
+    </div>
+</nav>
+
+<button class="fab-btn" id="fab-add">+</button>
+
+<!-- Inventory sheet -->
+<div class="sheet-overlay" id="inv-overlay"></div>
+<div class="bottom-sheet" id="inv-sheet">
+    <div class="sheet-handle"></div>
+    <div class="text-base font-bold mb-4" id="inv-sheet-title">Новый продукт</div>
+    <div class="sheet-field">
+        <label class="sheet-label">Название</label>
+        <input type="text" id="inv-name" placeholder="Например: молоко">
+    </div>
+    <div class="sheet-field">
+        <div class="toggle-row">
+            <span class="text-sm font-medium">Есть в наличии</span>
+            <label class="switch">
+                <input type="checkbox" id="inv-available" checked>
+                <span class="track"></span>
+            </label>
+        </div>
+    </div>
+    <div class="sheet-field">
+        <label class="sheet-label">Количество (необязательно)</label>
+        <div class="flex gap-2">
+            <input type="number" id="inv-quantity" step="any" min="0" placeholder="0" class="flex-1">
+            <input type="text" id="inv-unit" placeholder="шт / кг / л" style="width:110px;flex-shrink:0">
+        </div>
+    </div>
+    <div class="mt-4">
+        <button class="btn-primary" id="inv-save-btn">Сохранить</button>
+        <button class="btn-text" id="inv-cancel-btn">Отмена</button>
+    </div>
+</div>
+
+<!-- Fact sheet -->
+<div class="sheet-overlay" id="fact-overlay"></div>
+<div class="bottom-sheet" id="fact-sheet">
+    <div class="sheet-handle"></div>
+    <div class="text-base font-bold mb-4" id="fact-sheet-title">Новый факт</div>
+    <div class="sheet-field">
+        <label class="sheet-label">Текст факта</label>
+        <textarea id="fact-text" placeholder="Например: не люблю кинзу, аллергия на орехи"></textarea>
+    </div>
+    <div class="mt-4">
+        <button class="btn-primary" id="fact-save-btn">Сохранить</button>
+        <button class="btn-text" id="fact-cancel-btn">Отмена</button>
+    </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const params = new URLSearchParams(window.location.search);
+const chatId = params.get('chat_id');
+const urlTs = params.get('ts') || '';
+const urlSig = params.get('sig') || '';
+const urlTopicId = params.get('topic_id') || '';
+
+const TAB_TITLES = { fridge: 'Холодильник', memory: 'Память', history: 'История' };
+
+let currentTab = 'fridge';
+let memorySection = 'facts';
+let inventoryCache = [];
+let factsCache = [];
+let conflictsCache = [];
+let editingInventory = null;
+let editingFact = null;
+
+const fmtDateTime = (d) => {
+    if (!d) return '';
+    const date = new Date(typeof d === 'number' ? d * 1000 : d);
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+const fmtDateRelative = (d) => {
+    if (!d) return '';
+    const date = new Date(typeof d === 'number' ? d * 1000 : d);
+    if (isNaN(date.getTime())) return '';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const target = new Date(date); target.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today - target) / 86400000);
+    if (diffDays === 0) return 'сегодня';
+    if (diffDays === 1) return 'вчера';
+    if (diffDays > 1 && diffDays < 7) return `${diffDays} дн. назад`;
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+async function api(path, opts = {}) {
+    const sep = path.includes('?') ? '&' : '?';
+    let url = `${window.location.origin}${path}${sep}chat_id=${encodeURIComponent(chatId)}`;
+    if (urlTs && urlSig) url += `&ts=${encodeURIComponent(urlTs)}&sig=${encodeURIComponent(urlSig)}`;
+    if (urlTopicId) url += `&topic_id=${encodeURIComponent(urlTopicId)}`;
+    const headers = { 'X-Telegram-Init-Data': tg.initData || '' };
+    if (opts.method && opts.method !== 'GET' && opts.body) headers['Content-Type'] = 'application/json';
+    const res = await fetch(url, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+    const ct = res.headers.get('content-type') || '';
+    let payload = null;
+    if (ct.includes('json')) {
+        payload = await res.json().catch(() => null);
+    } else {
+        payload = await res.text().catch(() => '');
+    }
+    if (res.status === 401 || res.status === 403) {
+        const err = new Error('forbidden');
+        err.forbidden = true;
+        throw err;
+    }
+    if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        err.payload = payload;
+        throw err;
+    }
+    return payload;
+}
+
+function showToast(msg, duration = 2800) {
+    const el = document.createElement('div');
+    el.className = 'toast toast-in';
+    el.textContent = msg;
+    const container = document.getElementById('toast-container');
+    container.appendChild(el);
+    setTimeout(() => {
+        el.classList.remove('toast-in');
+        el.classList.add('toast-out');
+        setTimeout(() => el.remove(), 300);
+    }, duration);
+}
+
+function showForbidden() {
+    document.getElementById('app').innerHTML = `
+        <div class="flex items-center justify-center" style="min-height:80vh;padding:24px">
+            <div class="card text-center px-6 py-8">
+                <div class="text-3xl mb-3">&#128274;</div>
+                <div class="text-base font-semibold mb-1">Доступ запрещён</div>
+                <div class="text-sm" style="color:var(--tg-theme-hint-color)">Откройте приложение через кнопку в Telegram-боте.</div>
+            </div>
+        </div>`;
+    document.querySelector('.bottom-nav')?.remove();
+    document.getElementById('fab-add')?.remove();
+}
+
+function handleApiError(err) {
+    if (err && err.forbidden) { showForbidden(); return true; }
+    return false;
+}
+
+function errorBlock(msg, retryFn) {
+    const div = document.createElement('div');
+    div.className = 'card text-center py-8';
+    div.innerHTML = `
+        <div class="text-3xl mb-3">&#128533;</div>
+        <div class="text-sm mb-4" style="color:var(--tg-theme-hint-color)">${esc(msg)}</div>
+        <button class="btn-primary" style="width:auto;display:inline-block;padding:10px 24px">Повторить</button>
+    `;
+    div.querySelector('button').onclick = retryFn;
+    return div;
+}
+
+function emptyBlock(emoji, title, sub) {
+    const div = document.createElement('div');
+    div.className = 'card text-center py-10 fade-in';
+    div.innerHTML = `
+        <div class="text-4xl mb-3">${emoji}</div>
+        <div class="text-base font-semibold mb-1">${esc(title)}</div>
+        ${sub ? `<div class="text-sm" style="color:var(--tg-theme-hint-color)">${esc(sub)}</div>` : ''}
+    `;
+    return div;
+}
+
+function showSection(prefix, section) {
+    ['skeleton', 'content', 'error'].forEach(s => {
+        const el = document.getElementById(`${prefix}-${s}`);
+        if (!el) return;
+        if (s === section) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+    });
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    document.querySelector(`.nav-item[data-tab="${tab}"]`).classList.add('active');
+    document.getElementById('page-title').textContent = TAB_TITLES[tab];
+
+    updateFab();
+
+    if (tab === 'fridge') { tg.BackButton.hide(); loadInventory(); }
+    else {
+        tg.BackButton.show();
+        if (tab === 'memory') loadMemory();
+        else if (tab === 'history') loadHistory();
+    }
+}
+
+function updateFab() {
+    const fab = document.getElementById('fab-add');
+    if (!fab) return;
+    const showFab = currentTab === 'fridge' || (currentTab === 'memory' && memorySection === 'facts');
+    fab.classList.toggle('hidden', !showFab);
+}
+
+tg.BackButton.onClick(() => switchTab('fridge'));
+
+document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => switchTab(item.dataset.tab));
+});
+
+document.getElementById('fab-add').addEventListener('click', () => {
+    if (currentTab === 'fridge') openInventorySheet();
+    else if (currentTab === 'memory' && memorySection === 'facts') openFactSheet();
+});
+
+/* ============ FRIDGE ============ */
+
+async function loadInventory() {
+    showSection('fridge', 'skeleton');
+    try {
+        const data = await api('/api/meals/inventory');
+        inventoryCache = (data && data.items) || [];
+        renderInventory();
+        showSection('fridge', 'content');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const errEl = document.getElementById('fridge-error');
+        errEl.innerHTML = '';
+        errEl.appendChild(errorBlock('Не удалось загрузить продукты', loadInventory));
+        showSection('fridge', 'error');
+    }
+}
+
+function renderInventory() {
+    const container = document.getElementById('fridge-content');
+    if (!inventoryCache.length) {
+        container.innerHTML = '';
+        container.appendChild(emptyBlock('&#129387;', 'Холодильник пуст', 'Добавьте продукты кнопкой «+»'));
+        return;
+    }
+    const items = [...inventoryCache].sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+
+    let html = '<div class="fade-in">';
+    items.forEach(it => {
+        const available = !!it.available;
+        let qtyText = '';
+        if (it.quantity != null && it.quantity !== '' && Number(it.quantity) !== 0) {
+            qtyText = `${esc(it.quantity)}${it.unit ? ' ' + esc(it.unit) : ''}`;
+        } else if (it.unit) {
+            qtyText = esc(it.unit);
+        }
+        html += `
+            <div class="inv-card ${available ? '' : 'unavailable'}" data-id="${esc(it.id)}">
+                <div class="check ${available ? 'on' : ''}" data-toggle="${esc(it.id)}">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="inv-name text-sm font-medium truncate">${esc(it.name)}</div>
+                    ${qtyText ? `<div class="text-xs" style="color:var(--tg-theme-hint-color)">${qtyText}</div>` : ''}
+                </div>
+                <button class="icon-btn danger" data-del="${esc(it.id)}">&#128465;</button>
+            </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('.check[data-toggle]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleInventory(el.dataset.toggle);
+        });
+    });
+    container.querySelectorAll('.icon-btn[data-del]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteInventory(el.dataset.del);
+        });
+    });
+    container.querySelectorAll('.inv-card[data-id]').forEach(el => {
+        el.addEventListener('click', () => {
+            const item = inventoryCache.find(i => String(i.id) === String(el.dataset.id));
+            if (item) openInventorySheet(item);
+        });
+    });
+}
+
+async function toggleInventory(id) {
+    const item = inventoryCache.find(i => String(i.id) === String(id));
+    if (!item) return;
+    const next = !item.available;
+    item.available = next;
+    renderInventory();
+    try {
+        const res = await api('/api/meals/inventory/toggle', {
+            method: 'POST',
+            body: JSON.stringify({ id: item.id, available: next })
+        });
+        if (res && res.success === false) throw new Error('rejected');
+    } catch (e) {
+        item.available = !next;
+        renderInventory();
+        if (handleApiError(e)) return;
+        showToast('Не удалось изменить');
+    }
+}
+
+async function deleteInventory(id) {
+    const item = inventoryCache.find(i => String(i.id) === String(id));
+    if (!item) return;
+    if (!confirm(`Удалить «${item.name}» из холодильника?`)) return;
+    try {
+        const res = await api(`/api/meals/inventory?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (res && res.success === false) throw new Error('rejected');
+        inventoryCache = inventoryCache.filter(i => String(i.id) !== String(id));
+        renderInventory();
+        showToast('Удалено');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        showToast('Ошибка удаления');
+    }
+}
+
+function openInventorySheet(item = null) {
+    editingInventory = item;
+    document.getElementById('inv-sheet-title').textContent = item ? 'Редактировать продукт' : 'Новый продукт';
+    document.getElementById('inv-name').value = item ? (item.name || '') : '';
+    document.getElementById('inv-available').checked = item ? !!item.available : true;
+    document.getElementById('inv-quantity').value = (item && item.quantity != null) ? item.quantity : '';
+    document.getElementById('inv-unit').value = item ? (item.unit || '') : '';
+    openSheet('inv');
+}
+
+async function saveInventory() {
+    const name = document.getElementById('inv-name').value.trim();
+    if (!name) { showToast('Введите название'); return; }
+    const available = document.getElementById('inv-available').checked;
+    const qtyRaw = document.getElementById('inv-quantity').value.trim();
+    const unit = document.getElementById('inv-unit').value.trim();
+
+    const body = { name, available };
+    body.quantity = qtyRaw === '' ? null : Number(qtyRaw);
+    body.unit = unit || null;
+
+    const btn = document.getElementById('inv-save-btn');
+    btn.disabled = true;
+    try {
+        if (editingInventory) {
+            body.id = editingInventory.id;
+            const res = await api('/api/meals/inventory', { method: 'PUT', body: JSON.stringify(body) });
+            if (res && res.success === false) throw new Error('rejected');
+        } else {
+            const res = await api('/api/meals/inventory', { method: 'POST', body: JSON.stringify(body) });
+            if (res && res.error) { showToast(res.error); btn.disabled = false; return; }
+        }
+        closeSheet('inv');
+        showToast('Сохранено');
+        loadInventory();
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const apiMsg = e.payload && e.payload.error;
+        showToast(apiMsg || 'Ошибка сохранения');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+/* ============ MEMORY ============ */
+
+document.querySelectorAll('.section-tab').forEach(tab => {
+    tab.addEventListener('click', () => setMemorySection(tab.dataset.sec));
+});
+
+function setMemorySection(sec) {
+    memorySection = sec;
+    document.querySelectorAll('.section-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.sec === sec));
+    document.getElementById('memory-facts').classList.toggle('hidden', sec !== 'facts');
+    document.getElementById('memory-conflicts').classList.toggle('hidden', sec !== 'conflicts');
+    updateFab();
+    if (sec === 'facts') loadFacts();
+    else loadConflicts();
+}
+
+function loadMemory() {
+    if (memorySection === 'facts') loadFacts();
+    else loadConflicts();
+    loadConflictsCount();
+}
+
+async function loadConflictsCount() {
+    try {
+        const data = await api('/api/meals/conflicts');
+        const n = ((data && data.items) || []).length;
+        updateConflictsBadge(n);
+    } catch (e) { /* badge is best-effort */ }
+}
+
+function updateConflictsBadge(n) {
+    const navBadge = document.getElementById('nav-conflicts-badge');
+    const secBadge = document.getElementById('sec-conflicts-count');
+    [navBadge, secBadge].forEach(b => {
+        if (!b) return;
+        b.textContent = n > 99 ? '99+' : String(n);
+        b.classList.toggle('hidden', n <= 0);
+    });
+}
+
+/* ----- Facts ----- */
+
+async function loadFacts() {
+    showSection('facts', 'skeleton');
+    try {
+        const data = await api('/api/meals/facts');
+        factsCache = (data && data.items) || [];
+        renderFacts();
+        showSection('facts', 'content');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const errEl = document.getElementById('facts-error');
+        errEl.innerHTML = '';
+        errEl.appendChild(errorBlock('Не удалось загрузить факты', loadFacts));
+        showSection('facts', 'error');
+    }
+}
+
+function sourceBadge(source) {
+    const s = String(source || '').toLowerCase();
+    if (s === 'manual') return '<span class="badge badge-manual">вручную</span>';
+    if (s === 'extracted') return '<span class="badge badge-extracted">из диалога</span>';
+    if (!s) return '';
+    return `<span class="badge badge-neutral">${esc(source)}</span>`;
+}
+
+function renderFacts() {
+    const container = document.getElementById('facts-content');
+    if (!factsCache.length) {
+        container.innerHTML = '';
+        container.appendChild(emptyBlock('&#129504;', 'Фактов пока нет', 'Бот запомнит ваши предпочтения, или добавьте факт вручную кнопкой «+»'));
+        return;
+    }
+    let html = '<div class="fade-in">';
+    factsCache.forEach(f => {
+        html += `
+            <div class="card mb-2" data-fact-id="${esc(f.id)}" style="padding:13px 14px">
+                <div class="flex items-start gap-2">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm" style="word-break:break-word">${esc(f.fact)}</div>
+                        <div class="mt-1.5 flex items-center gap-2">
+                            ${sourceBadge(f.source)}
+                            <span class="text-xs" style="color:var(--tg-theme-hint-color)">${fmtDateRelative(f.updated_at || f.created_at)}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1 flex-shrink-0">
+                        <button class="icon-btn" data-fact-edit="${esc(f.id)}">&#9998;</button>
+                        <button class="icon-btn danger" data-fact-del="${esc(f.id)}">&#128465;</button>
+                    </div>
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('[data-fact-edit]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const f = factsCache.find(x => String(x.id) === String(btn.dataset.factEdit));
+            if (f) openFactSheet(f);
+        });
+    });
+    container.querySelectorAll('[data-fact-del]').forEach(btn => {
+        btn.addEventListener('click', () => deactivateFact(btn.dataset.factDel));
+    });
+}
+
+function openFactSheet(fact = null) {
+    editingFact = fact;
+    document.getElementById('fact-sheet-title').textContent = fact ? 'Редактировать факт' : 'Новый факт';
+    document.getElementById('fact-text').value = fact ? (fact.fact || '') : '';
+    openSheet('fact');
+}
+
+async function saveFact() {
+    const text = document.getElementById('fact-text').value.trim();
+    if (!text) { showToast('Введите текст факта'); return; }
+    const btn = document.getElementById('fact-save-btn');
+    btn.disabled = true;
+    try {
+        if (editingFact) {
+            const res = await api('/api/meals/facts', {
+                method: 'PUT',
+                body: JSON.stringify({ id: editingFact.id, fact: text })
+            });
+            if (res && res.success === false) throw new Error('rejected');
+        } else {
+            const res = await api('/api/meals/facts', {
+                method: 'POST',
+                body: JSON.stringify({ fact: text })
+            });
+            if (res && res.error) { showToast(res.error); btn.disabled = false; return; }
+        }
+        closeSheet('fact');
+        showToast('Сохранено');
+        loadFacts();
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const apiMsg = e.payload && e.payload.error;
+        showToast(apiMsg || 'Ошибка сохранения');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deactivateFact(id) {
+    const f = factsCache.find(x => String(x.id) === String(id));
+    if (!confirm(f ? `Удалить факт «${truncate(f.fact, 60)}»?` : 'Удалить факт?')) return;
+    try {
+        const res = await api('/api/meals/facts/deactivate', {
+            method: 'POST',
+            body: JSON.stringify({ id })
+        });
+        if (res && res.success === false) throw new Error('rejected');
+        factsCache = factsCache.filter(x => String(x.id) !== String(id));
+        renderFacts();
+        showToast('Факт удалён');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        showToast('Ошибка удаления');
+    }
+}
+
+function truncate(s, n) {
+    s = String(s || '');
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+/* ----- Conflicts ----- */
+
+async function loadConflicts() {
+    showSection('conflicts', 'skeleton');
+    try {
+        const data = await api('/api/meals/conflicts');
+        conflictsCache = (data && data.items) || [];
+        updateConflictsBadge(conflictsCache.length);
+        renderConflicts();
+        showSection('conflicts', 'content');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const errEl = document.getElementById('conflicts-error');
+        errEl.innerHTML = '';
+        errEl.appendChild(errorBlock('Не удалось загрузить конфликты', loadConflicts));
+        showSection('conflicts', 'error');
+    }
+}
+
+function recommendationBadge(rec) {
+    const r = String(rec || '').toLowerCase();
+    const map = {
+        accept_new: ['badge-rec', 'рекомендуется: принять'],
+        reject: ['badge-neutral', 'рекомендуется: отклонить'],
+        keep_both: ['badge-neutral', 'рекомендуется: оставить оба'],
+    };
+    if (map[r]) return `<span class="badge ${map[r][0]}">${map[r][1]}</span>`;
+    if (!r) return '';
+    return `<span class="badge badge-neutral">${esc(rec)}</span>`;
+}
+
+function renderConflicts() {
+    const container = document.getElementById('conflicts-content');
+    if (!conflictsCache.length) {
+        container.innerHTML = '';
+        container.appendChild(emptyBlock('&#9989;', 'Конфликтов нет', 'Все предложения по фактам обработаны'));
+        return;
+    }
+    let html = '<div class="fade-in">';
+    conflictsCache.forEach(c => {
+        const isNewFact = !c.old_fact_text;
+        const recommended = String(c.recommendation || '').toLowerCase();
+        html += `
+            <div class="conflict-card" data-conflict-id="${esc(c.id)}">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-semibold" style="color:var(--tg-theme-hint-color)">
+                        ${isNewFact ? 'Новый факт' : 'Обновление факта'}
+                    </span>
+                    ${recommendationBadge(c.recommendation)}
+                </div>
+                ${isNewFact ? '' : `<div class="conflict-old">${esc(c.old_fact_text)}</div>`}
+                <div class="conflict-new">${esc(c.proposed_fact)}</div>
+                ${c.source_note ? `<div class="text-xs mb-2.5" style="color:var(--tg-theme-hint-color)">&#128172; ${esc(c.source_note)}</div>` : ''}
+                <div class="conflict-actions">
+                    <button class="conflict-btn ${recommended === 'accept_new' ? 'accept' : 'both'}" data-action="accept_new">Принять новый</button>
+                    <button class="conflict-btn reject" data-action="reject">Отклонить</button>
+                    <button class="conflict-btn both" data-action="keep_both">Оставить оба</button>
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('.conflict-card').forEach(card => {
+        const id = card.dataset.conflictId;
+        card.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', () => resolveConflict(id, btn.dataset.action, card));
+        });
+    });
+}
+
+const ACTION_LABEL = {
+    accept_new: 'Новый факт принят',
+    reject: 'Отклонено',
+    keep_both: 'Оставлены оба',
+};
+
+async function resolveConflict(id, action, card) {
+    card.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+        const res = await api('/api/meals/conflicts/resolve', {
+            method: 'POST',
+            body: JSON.stringify({ id, action })
+        });
+        if (res && res.success === false) throw new Error('rejected');
+        card.classList.add('slide-out');
+        setTimeout(() => {
+            conflictsCache = conflictsCache.filter(c => String(c.id) !== String(id));
+            updateConflictsBadge(conflictsCache.length);
+            renderConflicts();
+        }, 300);
+        showToast(ACTION_LABEL[action] || 'Готово');
+    } catch (e) {
+        card.querySelectorAll('button').forEach(b => b.disabled = false);
+        if (handleApiError(e)) return;
+        showToast('Не удалось обработать');
+    }
+}
+
+/* ============ HISTORY ============ */
+
+async function loadHistory() {
+    showSection('history', 'skeleton');
+    try {
+        const data = await api('/api/meals/history?limit=100');
+        const items = (data && data.items) || [];
+        renderHistory(items);
+        showSection('history', 'content');
+    } catch (e) {
+        if (handleApiError(e)) return;
+        const errEl = document.getElementById('history-error');
+        errEl.innerHTML = '';
+        errEl.appendChild(errorBlock('Не удалось загрузить историю', loadHistory));
+        showSection('history', 'error');
+    }
+}
+
+function renderHistory(items) {
+    const container = document.getElementById('history-content');
+    if (!items.length) {
+        container.innerHTML = '';
+        container.appendChild(emptyBlock('&#128220;', 'Здесь пока пусто', 'Когда что-нибудь приготовите — это появится в истории'));
+        return;
+    }
+    const sorted = [...items].sort((a, b) => {
+        const da = new Date(a.cooked_at).getTime() || 0;
+        const db = new Date(b.cooked_at).getTime() || 0;
+        return db - da;
+    });
+    let html = '<div class="card fade-in">';
+    sorted.forEach(it => {
+        html += `
+            <div class="history-item">
+                <div class="history-dot">&#127859;</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium" style="word-break:break-word">${esc(it.dish_name)}</div>
+                    <div class="text-xs" style="color:var(--tg-theme-hint-color)">${fmtDateRelative(it.cooked_at)}</div>
+                </div>
+            </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+/* ============ SHEETS ============ */
+
+function openSheet(prefix) {
+    const overlay = document.getElementById(`${prefix}-overlay`);
+    const sheet = document.getElementById(`${prefix}-sheet`);
+    requestAnimationFrame(() => {
+        overlay.classList.add('visible');
+        sheet.classList.add('visible');
+    });
+}
+function closeSheet(prefix) {
+    document.getElementById(`${prefix}-overlay`).classList.remove('visible');
+    document.getElementById(`${prefix}-sheet`).classList.remove('visible');
+}
+
+document.getElementById('inv-save-btn').addEventListener('click', saveInventory);
+document.getElementById('inv-cancel-btn').addEventListener('click', () => closeSheet('inv'));
+document.getElementById('inv-overlay').addEventListener('click', () => closeSheet('inv'));
+document.getElementById('fact-save-btn').addEventListener('click', saveFact);
+document.getElementById('fact-cancel-btn').addEventListener('click', () => closeSheet('fact'));
+document.getElementById('fact-overlay').addEventListener('click', () => closeSheet('fact'));
+
+/* ============ BOOT ============ */
+
+if (!chatId) {
+    document.getElementById('app').innerHTML = `
+        <div class="flex items-center justify-center" style="min-height:80vh;padding:24px">
+            <div class="card text-center px-6 py-8">
+                <div class="text-3xl mb-3">&#9888;&#65039;</div>
+                <div class="text-sm" style="color:var(--tg-theme-hint-color)">Отсутствует chat_id. Откройте приложение через Telegram-бот.</div>
+            </div>
+        </div>`;
+    document.querySelector('.bottom-nav')?.remove();
+    document.getElementById('fab-add')?.remove();
+} else {
+    updateFab();
+    loadInventory();
+}
+</script>
+</body>
+</html>

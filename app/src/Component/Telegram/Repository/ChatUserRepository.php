@@ -32,19 +32,11 @@ class ChatUserRepository
 
     public function setAdmin(int $chatId, int $userId, bool $isAdmin): void
     {
-        $existing = $this->findByChatAndUser($chatId, $userId);
-
-        if ($existing) {
-            $this->db->execute(
-                'UPDATE telegram_chat_users SET is_admin = ? WHERE id = ?',
-                [$isAdmin, $existing['id']]
-            );
-        } else {
-            $this->db->execute(
-                'INSERT INTO telegram_chat_users (chat_id, user_id, is_admin) VALUES (?, ?, ?)',
-                [$chatId, $userId, $isAdmin]
-            );
-        }
+        $this->db->execute(
+            'INSERT INTO telegram_chat_users (chat_id, user_id, is_admin) VALUES (?, ?, ?)
+             ON CONFLICT (chat_id, user_id) DO UPDATE SET is_admin = EXCLUDED.is_admin',
+            [$chatId, $userId, $isAdmin]
+        );
     }
 
     public function ensureExists(int $chatId, int $userId, bool $isPrivateChat = false): void

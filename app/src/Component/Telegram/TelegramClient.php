@@ -15,17 +15,27 @@ class TelegramClient
 {
     private Client $http;
     private string $baseUrl;
+    private bool $dryRun;
 
     public function __construct(
         private Config $config,
         private LoggerInterface $logger
     ) {
-        $token = $this->config->get('telegram.bot_token', '');
+        $token = $this->config->get('telegram.budget_bot_token', '');
+        $this->dryRun = (bool) $this->config->get('telegram.dry_run', false);
         $this->baseUrl = "https://api.telegram.org/bot{$token}";
         $this->http = new Client([
             'timeout' => 90,
             'connect_timeout' => 30,
         ]);
+    }
+
+    public function withToken(string $token): self
+    {
+        $clone = clone $this;
+        $clone->baseUrl = "https://api.telegram.org/bot{$token}";
+
+        return $clone;
     }
 
     public function sendMessage(int|string $chatId, string $text, ?string $parseMode = 'HTML', ?int $messageThreadId = null): array
@@ -38,6 +48,7 @@ class TelegramClient
         if ($messageThreadId !== null) {
             $params['message_thread_id'] = $messageThreadId;
         }
+
         return $this->request('sendMessage', $params);
     }
 
@@ -47,6 +58,7 @@ class TelegramClient
         if ($secretToken) {
             $params['secret_token'] = $secretToken;
         }
+
         return $this->request('setWebhook', $params);
     }
 
@@ -74,6 +86,7 @@ class TelegramClient
             $params['text'] = $text;
             $params['show_alert'] = $showAlert;
         }
+
         return $this->request('answerCallbackQuery', $params);
     }
 
@@ -93,6 +106,7 @@ class TelegramClient
         if ($replyMarkup) {
             $params['reply_markup'] = json_encode($replyMarkup);
         }
+
         return $this->request('editMessageText', $params);
     }
 
@@ -114,6 +128,7 @@ class TelegramClient
         if ($messageThreadId !== null) {
             $params['message_thread_id'] = $messageThreadId;
         }
+
         return $this->request('sendMessage', $params);
     }
 
@@ -156,6 +171,12 @@ class TelegramClient
 
     private function request(string $method, array $params = []): array
     {
+        if ($this->dryRun) {
+            $this->logger->info("[dry-run] telegram {$method}", ['params' => $params]);
+
+            return ['ok' => true, 'result' => []];
+        }
+
         try {
             $response = $this->http->post("{$this->baseUrl}/{$method}", [
                 'form_params' => $params,
@@ -172,11 +193,13 @@ class TelegramClient
 
             return $data;
         } catch (GuzzleException $e) {
+            $error = preg_replace('#/bot[^/\s]+/#', '/bot***/', $e->getMessage());
             $this->logger->error('Telegram request failed', [
                 'method' => $method,
-                'error' => $e->getMessage(),
+                'error' => $error,
             ]);
-            return ['ok' => false, 'description' => $e->getMessage()];
+
+            return ['ok' => false, 'description' => $error];
         }
     }
 }

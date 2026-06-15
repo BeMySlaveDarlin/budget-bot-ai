@@ -71,7 +71,7 @@ services:
     ports:
       - "${DB_EXTERNAL_PORT:-5432}:5432"
     volumes:
-      - database_data:/var/lib/postgresql/data
+      - database_data:/var/lib/postgresql
       - ./docker/pgsql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - app-network

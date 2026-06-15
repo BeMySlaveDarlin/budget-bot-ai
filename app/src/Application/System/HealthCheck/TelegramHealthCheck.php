@@ -26,7 +26,7 @@ class TelegramHealthCheck implements HealthCheckInterface
     public function check(): array
     {
         try {
-            $token = $this->config->get('telegram.bot_token', '');
+            $token = $this->config->get('telegram.budget_bot_token', '');
             if (empty($token)) {
                 return ['healthy' => false, 'error' => 'Token not configured'];
             }

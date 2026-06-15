@@ -34,13 +34,10 @@ class LlmUsageRepository
 
     public function getDailyUsage(): int
     {
-        $today = date('Y-m-d');
-
         $result = $this->db->queryFirst(
             "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total
              FROM llm_usage
-             WHERE DATE(created_at) = ?",
-            [$today]
+             WHERE created_at::date = CURRENT_DATE"
         );
 
         return (int) ($result['total'] ?? 0);

@@ -20,7 +20,7 @@ class MessageRepository
     public function create(int $chatId, int $userId, int $messageId, string $text, ?int $topicId = null): int
     {
         return $this->db->insert(
-            "INSERT INTO messages (chat_id, user_id, telegram_message_id, raw_text, topic_id)
+            "INSERT INTO budget_messages (chat_id, user_id, telegram_message_id, raw_text, topic_id)
              VALUES (?, ?, ?, ?, ?)",
             [$chatId, $userId, $messageId, $text, $topicId]
         );
@@ -32,7 +32,7 @@ class MessageRepository
 
         if ($topicId !== null) {
             return $this->db->query(
-                "SELECT id, raw_text, created_at, categorized FROM messages
+                "SELECT id, raw_text, created_at, categorized FROM budget_messages
                  WHERE chat_id = ? AND topic_id = ? AND created_at >= ?
                  ORDER BY created_at DESC",
                 [$chatId, $topicId, $dateFrom]
@@ -40,7 +40,7 @@ class MessageRepository
         }
 
         return $this->db->query(
-            "SELECT id, raw_text, created_at, categorized FROM messages
+            "SELECT id, raw_text, created_at, categorized FROM budget_messages
              WHERE chat_id = ? AND topic_id IS NULL AND created_at >= ?
              ORDER BY created_at DESC",
             [$chatId, $dateFrom]
@@ -70,12 +70,12 @@ class MessageRepository
     {
         if ($topicId !== null) {
             $result = $this->db->queryFirst(
-                "SELECT COUNT(*) as count FROM messages WHERE chat_id = ? AND topic_id = ?",
+                "SELECT COUNT(*) as count FROM budget_messages WHERE chat_id = ? AND topic_id = ?",
                 [$chatId, $topicId]
             );
         } else {
             $result = $this->db->queryFirst(
-                "SELECT COUNT(*) as count FROM messages WHERE chat_id = ? AND topic_id IS NULL",
+                "SELECT COUNT(*) as count FROM budget_messages WHERE chat_id = ? AND topic_id IS NULL",
                 [$chatId]
             );
         }
@@ -87,13 +87,13 @@ class MessageRepository
     {
         if ($topicId !== null) {
             return $this->db->execute(
-                "UPDATE messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?",
+                "UPDATE budget_messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?",
                 [$text, $chatId, $telegramMessageId, $topicId]
             ) > 0;
         }
 
         return $this->db->execute(
-            "UPDATE messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL",
+            "UPDATE budget_messages SET raw_text = ?, categorized = NULL WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL",
             [$text, $chatId, $telegramMessageId]
         ) > 0;
     }
@@ -102,13 +102,13 @@ class MessageRepository
     {
         if ($topicId !== null) {
             return $this->db->execute(
-                'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?',
+                'DELETE FROM budget_messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id = ?',
                 [$chatId, $telegramMessageId, $topicId]
             ) > 0;
         }
 
         return $this->db->execute(
-            'DELETE FROM messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL',
+            'DELETE FROM budget_messages WHERE chat_id = ? AND telegram_message_id = ? AND topic_id IS NULL',
             [$chatId, $telegramMessageId]
         ) > 0;
     }
@@ -150,7 +150,7 @@ class MessageRepository
             ]);
 
             $this->db->execute(
-                "UPDATE messages SET categorized = ?::jsonb WHERE id = ?",
+                "UPDATE budget_messages SET categorized = ?::jsonb WHERE id = ?",
                 [$json, $messageId]
             );
         }

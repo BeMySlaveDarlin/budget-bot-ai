@@ -46,9 +46,9 @@ final class MigrateMessagesCommand implements CommandInterface
         }
 
         $stmt = $this->db->execute(
-            "INSERT INTO messages (chat_id, user_id, telegram_message_id, raw_text, categorized, topic_id, created_at)
+            "INSERT INTO budget_messages (chat_id, user_id, telegram_message_id, raw_text, categorized, topic_id, created_at)
              SELECT ?, user_id, telegram_message_id, raw_text, categorized, ?, created_at
-             FROM messages WHERE chat_id = ?",
+             FROM budget_messages WHERE chat_id = ?",
             [$newChat['id'], $topicId, $oldChat['id']]
         );
 

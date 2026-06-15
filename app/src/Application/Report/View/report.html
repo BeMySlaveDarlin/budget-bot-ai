@@ -599,8 +599,12 @@ const chatId = params.get('chat_id');
 const urlTs = params.get('ts') || '';
 const urlSig = params.get('sig') || '';
 const urlTopicId = params.get('topic_id') || '';
-const urlCurrency = params.get('currency') || 'THB';
+const urlCurrency = (params.get('currency') || 'THB').replace(/[^A-Za-z0-9]/g, '').slice(0, 8) || 'THB';
 const urlMonths = parseInt(params.get('months')) || 1;
+
+const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const fmt = (n) => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(n);
 const fmtDate = (d) => new Date(d).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short'});
@@ -825,7 +829,7 @@ function renderDashboard(summary, categories) {
             <div class="flex items-center justify-between py-2.5">
                 <div class="flex items-center gap-3">
                     <div class="cat-emoji" style="background:${chartColor}18;color:${chartColor}">${emoji}</div>
-                    <span class="text-sm font-medium">${c.category || 'Другое'}</span>
+                    <span class="text-sm font-medium">${esc(c.category || 'Другое')}</span>
                 </div>
                 <div class="text-right">
                     <span class="text-sm font-semibold">${fmt(Math.abs(c.total))} ${currentCurrency}</span>
@@ -853,7 +857,7 @@ function renderDashboard(summary, categories) {
             <div class="card card-balance text-center mb-4">
                 <div class="text-xs mb-1 font-medium" style="color:var(--color-balance)">Остаток</div>
                 <div class="text-lg font-bold" style="color:var(--color-balance);font-variant-numeric:tabular-nums">${fmt(summary.remainder.remainder)}</div>
-                <div class="text-xs mt-0.5" style="color:var(--tg-theme-hint-color)">${summary.remainder.currency}</div>
+                <div class="text-xs mt-0.5" style="color:var(--tg-theme-hint-color)">${esc(summary.remainder.currency)}</div>
             </div>
             ` : '<div class="mb-3"></div>'}
 
@@ -935,7 +939,7 @@ function updateCategoryFilter() {
     if (txType === 'expense' && categoriesCache.length > 0) {
         wrap.classList.remove('hidden');
         sel.innerHTML = '<option value="">Все категории</option>' +
-            categoriesCache.map(c => `<option value="${c.category}" ${txCategory === c.category ? 'selected' : ''}>${CATEGORY_EMOJI[c.category?.toLowerCase()] || '📦'} ${c.category}</option>`).join('');
+            categoriesCache.map(c => `<option value="${esc(c.category)}" ${txCategory === c.category ? 'selected' : ''}>${CATEGORY_EMOJI[c.category?.toLowerCase()] || '📦'} ${esc(c.category)}</option>`).join('');
     } else {
         wrap.classList.add('hidden');
         txCategory = '';
@@ -1090,11 +1094,11 @@ function renderCategoryList() {
         const isOpen = !!cached;
 
         html += `
-            <div class="category-group ${isOpen ? 'open' : ''}" data-category="${cat}" data-type-filter="${txType || ''}">
+            <div class="category-group ${isOpen ? 'open' : ''}" data-category="${esc(cat)}" data-type-filter="${esc(txType || '')}">
                 <div class="category-header" onclick="toggleCategory(this)">
                     <div class="cat-emoji" style="background:${catColor}18">${emoji}</div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium">${cat}</div>
+                        <div class="text-sm font-medium">${esc(cat)}</div>
                         <div class="text-xs" style="color:var(--tg-theme-hint-color)">${c.count} операц.</div>
                     </div>
                     <div class="text-sm font-semibold text-right whitespace-nowrap">${fmt(Math.abs(c.total))} ${currentCurrency}</div>
@@ -1158,14 +1162,14 @@ function renderCategoryItems(items) {
         return `
             <div class="transaction-item" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}">
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium truncate">${t.description || 'Без описания'}</div>
+                    <div class="text-sm font-medium truncate">${esc(t.description || 'Без описания')}</div>
                     <div class="text-xs" style="color:var(--tg-theme-hint-color)">${fmtDate(t.created_at)}</div>
                 </div>
                 <div class="text-sm font-semibold ${amountClass} text-right whitespace-nowrap">
-                    ${sign}${fmt(Math.abs(t.amount))} ${t.currency || currentCurrency}
+                    ${sign}${fmt(Math.abs(t.amount))} ${esc(t.currency || currentCurrency)}
                 </div>
                 <div class="flex gap-1 flex-shrink-0 ml-1">
-                    <button class="tx-edit-btn" data-tx='${JSON.stringify({message_id: t.id, item_index: t.item_index ?? 0, type: t.type, amount: t.amount, currency: t.currency, category: t.category, description: t.description, wallet: t.wallet, created_at: t.created_at}).replace(/'/g, "&#39;")}' style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#9998;</button>
+                    <button class="tx-edit-btn" data-tx='${esc(JSON.stringify({message_id: t.id, item_index: t.item_index ?? 0, type: t.type, amount: t.amount, currency: t.currency, category: t.category, description: t.description, wallet: t.wallet, created_at: t.created_at}))}' style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#9998;</button>
                     <button class="tx-delete-btn" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#128465;</button>
                 </div>
             </div>`;
@@ -1248,14 +1252,14 @@ function renderTransactions() {
             return `
                 <div class="transaction-item" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}">
                     <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium truncate">${t.description || 'Без описания'}</div>
+                        <div class="text-sm font-medium truncate">${esc(t.description || 'Без описания')}</div>
                         <div class="text-xs" style="color:var(--tg-theme-hint-color)">${fmtDate(t.created_at)}</div>
                     </div>
                     <div class="text-sm font-semibold ${amountClass} text-right whitespace-nowrap">
-                        ${sign}${fmt(Math.abs(t.amount))} ${t.currency || currentCurrency}
+                        ${sign}${fmt(Math.abs(t.amount))} ${esc(t.currency || currentCurrency)}
                     </div>
                     <div class="flex gap-1 flex-shrink-0 ml-1">
-                        <button class="tx-edit-btn" data-tx='${JSON.stringify({message_id: t.id, item_index: t.item_index ?? 0, type: t.type, amount: t.amount, currency: t.currency, category: t.category, description: t.description, wallet: t.wallet, created_at: t.created_at}).replace(/'/g, "&#39;")}' style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#9998;</button>
+                        <button class="tx-edit-btn" data-tx='${esc(JSON.stringify({message_id: t.id, item_index: t.item_index ?? 0, type: t.type, amount: t.amount, currency: t.currency, category: t.category, description: t.description, wallet: t.wallet, created_at: t.created_at}))}' style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#9998;</button>
                         <button class="tx-delete-btn" data-message-id="${t.id}" data-item-index="${t.item_index ?? 0}" style="background:none;border:none;cursor:pointer;padding:4px;font-size:14px;opacity:0.5;transition:opacity 0.15s">&#128465;</button>
                     </div>
                 </div>`;
@@ -1268,7 +1272,7 @@ function renderTransactions() {
                 <div class="category-header" onclick="this.parentElement.classList.toggle('open')">
                     <div class="cat-emoji" style="background:${catColor}18">${emoji}</div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium">${cat}</div>
+                        <div class="text-sm font-medium">${esc(cat)}</div>
                         <div class="text-xs" style="color:var(--tg-theme-hint-color)">${g.items.length} операц.</div>
                     </div>
                     <div class="text-sm font-semibold text-right whitespace-nowrap">${fmt(g.total)} ${currentCurrency}</div>
@@ -1383,7 +1387,7 @@ function renderTrendsCategoryFilter(allCats) {
     allCats.forEach(c => {
         const emoji = CATEGORY_EMOJI[c.toLowerCase()] || '📦';
         const active = trendsCategoryFilter.has(c);
-        html += `<button class="filter-btn ${active ? 'active' : ''}" data-cat="${c}">${emoji} ${c}</button>`;
+        html += `<button class="filter-btn ${active ? 'active' : ''}" data-cat="${esc(c)}">${emoji} ${esc(c)}</button>`;
     });
     wrap.innerHTML = html;
     wrap.querySelectorAll('.filter-btn').forEach(btn => {
@@ -1630,19 +1634,19 @@ function renderMore(comparison, rates) {
     if (rateItems.length > 0) {
         const rateRows = rateItems.map((r, i) => `
             <div class="flex justify-between items-center py-1.5" style="border-bottom:0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 10%, transparent)" id="rate-row-${i}">
-                <span class="text-sm font-medium">1 ${r.from}</span>
+                <span class="text-sm font-medium">1 ${esc(r.from)}</span>
                 <div class="flex items-center gap-2">
                     <span class="text-sm rate-display-${i}" style="color:${r.custom ? 'var(--tg-theme-link-color)' : 'var(--tg-theme-hint-color)'}">${fmt(r.rate)} ${currentCurrency}</span>
-                    <button class="rate-edit-btn" data-idx="${i}" data-from="${r.from}" data-rate="${r.rate}" data-custom="${r.custom}" style="font-size:12px;padding:2px 6px;border:none;background:none;cursor:pointer;opacity:0.5">✏️</button>
+                    <button class="rate-edit-btn" data-idx="${i}" data-from="${esc(r.from)}" data-rate="${r.rate}" data-custom="${r.custom}" style="font-size:12px;padding:2px 6px;border:none;background:none;cursor:pointer;opacity:0.5">✏️</button>
                 </div>
             </div>
             <div class="hidden rate-edit-form-${i} flex items-center gap-2 py-1.5" style="border-bottom:0.5px solid color-mix(in srgb, var(--tg-theme-hint-color) 10%, transparent)">
-                <span class="text-sm">1 ${r.from} =</span>
+                <span class="text-sm">1 ${esc(r.from)} =</span>
                 <input type="number" step="0.01" value="${r.rate}" class="rate-input" style="width:100px;padding:4px 8px;border:1px solid var(--tg-theme-hint-color);border-radius:6px;background:var(--tg-theme-bg-color);color:var(--tg-theme-text-color);font-size:14px" />
                 <span class="text-sm">${currentCurrency}</span>
-                <button class="rate-save-btn" data-idx="${i}" data-from="${r.from}" style="font-size:12px;padding:2px 8px;border:none;background:var(--tg-theme-button-color);color:var(--tg-theme-button-text-color);border-radius:6px;cursor:pointer">✓</button>
+                <button class="rate-save-btn" data-idx="${i}" data-from="${esc(r.from)}" style="font-size:12px;padding:2px 8px;border:none;background:var(--tg-theme-button-color);color:var(--tg-theme-button-text-color);border-radius:6px;cursor:pointer">✓</button>
                 <button class="rate-cancel-btn" data-idx="${i}" style="font-size:12px;padding:2px 8px;border:none;background:var(--tg-theme-secondary-bg-color);color:var(--tg-theme-text-color);border-radius:6px;cursor:pointer">✕</button>
-                ${r.custom ? `<button class="rate-reset-btn" data-idx="${i}" data-from="${r.from}" style="font-size:11px;padding:2px 6px;border:none;background:none;color:var(--color-expense);cursor:pointer">↩</button>` : ''}
+                ${r.custom ? `<button class="rate-reset-btn" data-idx="${i}" data-from="${esc(r.from)}" style="font-size:11px;padding:2px 6px;border:none;background:none;color:var(--color-expense);cursor:pointer">↩</button>` : ''}
             </div>
         `).join('');
         const updatedAt = rates.updated_at ? new Date(rates.updated_at).toLocaleString('ru-RU', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
@@ -1909,12 +1913,12 @@ async function loadSheetSuggestions(data) {
 
         const catSelect = document.getElementById('sheet-category-select');
         catSelect.innerHTML = '<option value="">Выберите...</option>' +
-            categories.map(c => `<option value="${c}" ${data?.category === c ? 'selected' : ''}>${CATEGORY_EMOJI[c?.toLowerCase()] || ''} ${c}</option>`).join('') +
+            categories.map(c => `<option value="${esc(c)}" ${data?.category === c ? 'selected' : ''}>${CATEGORY_EMOJI[c?.toLowerCase()] || ''} ${esc(c)}</option>`).join('') +
             '<option value="__custom__">Другое (своя)</option>';
 
         const walletSelect = document.getElementById('sheet-wallet-select');
         walletSelect.innerHTML = '<option value="">Выберите...</option>' +
-            wallets.map(w => `<option value="${w}" ${data?.wallet === w ? 'selected' : ''}>${w}</option>`).join('') +
+            wallets.map(w => `<option value="${esc(w)}" ${data?.wallet === w ? 'selected' : ''}>${esc(w)}</option>`).join('') +
             '<option value="__custom__">Другое (свой)</option>';
     } catch (e) {}
 
@@ -1947,7 +1951,7 @@ async function submitTransaction() {
 
     const description = document.getElementById('sheet-description').value.trim();
 
-    const body = {type: sheetType, amount, currency};
+    const body = {type: sheetType, amount, currency, chat_id: chatId};
     if (category) body.category = category;
     if (description) body.description = description;
     if (wallet) body.wallet = wallet;

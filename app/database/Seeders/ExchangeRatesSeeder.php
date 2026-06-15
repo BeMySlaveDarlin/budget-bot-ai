@@ -25,7 +25,7 @@ class ExchangeRatesSeeder implements SeederInterface
 
         foreach ($rates as [$from, $to, $rate]) {
             $this->db->execute("
-                INSERT INTO exchange_rates (currency_from, currency_to, rate, source, fetched_at)
+                INSERT INTO budget_exchange_rates (currency_from, currency_to, rate, source, fetched_at)
                 VALUES (?, ?, ?, 'seed', NOW())
                 ON CONFLICT (currency_from, currency_to) DO UPDATE SET rate = EXCLUDED.rate, fetched_at = NOW()
             ", [$from, $to, $rate]);

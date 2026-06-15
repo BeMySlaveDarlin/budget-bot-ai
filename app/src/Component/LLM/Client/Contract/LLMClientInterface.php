@@ -16,4 +16,6 @@ interface LLMClientInterface
     public function getDefaultModel(): string;
 
     public function supportsTools(): bool;
+
+    public function ping(): array;
 }

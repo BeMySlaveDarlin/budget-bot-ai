@@ -13,6 +13,8 @@ class SeedCommand implements CommandInterface
 {
     private const string SEEDERS_PATH = __DIR__ . '/../../../../database/Seeders';
 
+    private const array PRIORITY_SEEDERS = ['LlmProviderSeeder', 'BotConfigSeeder'];
+
     public function __construct(
         private DatabaseConnection $db
     ) {
@@ -67,7 +69,23 @@ class SeedCommand implements CommandInterface
             }
         }
 
-        return $seeders;
+        return $this->orderSeeders($seeders);
+    }
+
+    private function orderSeeders(array $seeders): array
+    {
+        $ordered = [];
+
+        foreach (self::PRIORITY_SEEDERS as $name) {
+            if (isset($seeders[$name])) {
+                $ordered[$name] = $seeders[$name];
+                unset($seeders[$name]);
+            }
+        }
+
+        ksort($seeders);
+
+        return $ordered + $seeders;
     }
 
     public function getName(): string

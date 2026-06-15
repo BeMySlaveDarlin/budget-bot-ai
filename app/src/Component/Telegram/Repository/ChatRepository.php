@@ -33,7 +33,8 @@ class ChatRepository
     {
         return $this->db->insert(
             "INSERT INTO telegram_chats (telegram_chat_id, title, type, description)
-             VALUES (?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (telegram_chat_id) DO NOTHING",
             [
                 $chatData['id'],
                 $chatData['title'] ?? null,

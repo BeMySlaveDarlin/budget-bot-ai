@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Service\Console\Handler;
 
 use App\Service\Attribute\Command;
-use App\Service\Console\Contract\CommandInterface;
 use App\Service\Config\Config;
+use App\Service\Console\Contract\CommandInterface;
 use GuzzleHttp\Client;
 
 #[Command(name: 'webhook:delete', description: 'Delete Telegram webhook')]
@@ -19,10 +19,11 @@ class WebhookDeleteCommand implements CommandInterface
 
     public function execute(array $args = []): int
     {
-        $token = $this->config->get('telegram.bot_token');
+        $token = $this->config->get('telegram.budget_bot_token');
 
         if (empty($token)) {
-            echo "TELEGRAM_BOT_TOKEN not configured.\n";
+            echo "BUDGET_BOT_TOKEN not configured.\n";
+
             return 1;
         }
 
@@ -37,13 +38,16 @@ class WebhookDeleteCommand implements CommandInterface
 
             if ($data['ok']) {
                 echo "Webhook deleted successfully.\n";
+
                 return 0;
             } else {
                 echo "Error: " . ($data['description'] ?? 'Unknown error') . "\n";
+
                 return 1;
             }
         } catch (\Throwable $e) {
             echo "Error: " . $e->getMessage() . "\n";
+
             return 1;
         }
     }

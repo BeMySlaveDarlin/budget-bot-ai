@@ -18,7 +18,7 @@ class ExchangeRateRepository
     public function upsert(string $currencyFrom, string $currencyTo, float $rate, string $source = 'exchangerate-api'): int
     {
         return $this->db->insert(
-            "INSERT INTO exchange_rates (currency_from, currency_to, rate, source, fetched_at, rate_date)
+            "INSERT INTO budget_exchange_rates (currency_from, currency_to, rate, source, fetched_at, rate_date)
              VALUES (?, ?, ?, ?, NOW(), CURRENT_DATE)
              ON CONFLICT (currency_from, currency_to, rate_date) DO UPDATE
              SET rate = EXCLUDED.rate, source = EXCLUDED.source, fetched_at = NOW()",
@@ -29,7 +29,7 @@ class ExchangeRateRepository
     public function getRate(string $currencyFrom, string $currencyTo = 'THB'): ?float
     {
         $result = $this->db->queryFirst(
-            "SELECT rate FROM exchange_rates
+            "SELECT rate FROM budget_exchange_rates
              WHERE currency_from = ? AND currency_to = ?
              ORDER BY rate_date DESC LIMIT 1",
             [$currencyFrom, $currencyTo]
@@ -41,7 +41,7 @@ class ExchangeRateRepository
     public function getRateForDate(string $currencyFrom, string $currencyTo, string $date): ?float
     {
         $result = $this->db->queryFirst(
-            "SELECT rate FROM exchange_rates
+            "SELECT rate FROM budget_exchange_rates
              WHERE currency_from = ? AND currency_to = ? AND rate_date <= ?
              ORDER BY rate_date DESC LIMIT 1",
             [$currencyFrom, $currencyTo, $date]
@@ -54,7 +54,7 @@ class ExchangeRateRepository
     {
         return $this->db->query(
             "SELECT DISTINCT ON (currency_from) currency_from, rate, fetched_at
-             FROM exchange_rates WHERE currency_to = ?
+             FROM budget_exchange_rates WHERE currency_to = ?
              ORDER BY currency_from, rate_date DESC",
             [$currencyTo]
         );
@@ -63,7 +63,7 @@ class ExchangeRateRepository
     public function getLastUpdate(): ?string
     {
         $result = $this->db->queryFirst(
-            "SELECT MAX(fetched_at) as last_update FROM exchange_rates"
+            "SELECT MAX(fetched_at) as last_update FROM budget_exchange_rates"
         );
 
         return $result['last_update'] ?? null;
@@ -71,6 +71,6 @@ class ExchangeRateRepository
 
     public function deleteAll(): void
     {
-        $this->db->execute("DELETE FROM exchange_rates");
+        $this->db->execute("DELETE FROM budget_exchange_rates");
     }
 }

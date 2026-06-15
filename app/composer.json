@@ -20,11 +20,19 @@
       "Database\\": "database/"
     }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
   "config": {
     "optimize-autoloader": true,
     "sort-packages": true
   },
   "require-dev": {
+    "dg/bypass-finals": "^1.10",
+    "mockery/mockery": "^1.6",
+    "phpunit/phpunit": "^12",
     "swoole/ide-helper": "^6.0"
   }
 }

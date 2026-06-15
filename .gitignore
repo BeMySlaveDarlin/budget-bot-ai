@@ -5,6 +5,7 @@
 .DS_Store
 
 app/vendor/
+.phpunit.result.cache
 
 runtime/logs/*
 runtime/cache/*

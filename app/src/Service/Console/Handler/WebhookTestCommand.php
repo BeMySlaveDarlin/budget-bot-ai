@@ -22,7 +22,7 @@ class WebhookTestCommand implements CommandInterface
     public function __construct(
         private Config $config
     ) {
-        $this->token = $this->config->get('telegram.bot_token');
+        $this->token = $this->config->get('telegram.budget_bot_token');
         $host = $this->config->get('swoole.host', '127.0.0.1');
         $port = $this->config->get('swoole.port', 9501);
         $this->webhookUrl = "http://{$host}:{$port}/telegram/{$this->token}";

@@ -91,10 +91,11 @@ class LLMClientFactory
 
         $logger = $this->logger ?? new NullLogger();
         $endpoint = $provider['api_endpoint'] ?? '';
+        $compat = $config['compat'] ?? null;
 
         return match (true) {
             str_contains($endpoint, 'anthropic.com'), $code === 'claude' => new ClaudeClient($config, $apiKey, $logger),
-            str_contains($endpoint, 'openai.com'), $code === 'openai' => new OpenAIClient($config, $apiKey, $logger),
+            str_contains($endpoint, 'openai.com'), $code === 'openai', $compat === 'openai' => new OpenAIClient($config, $apiKey, $logger),
             default => throw LLMException::providerNotConfigured($code),
         };
     }

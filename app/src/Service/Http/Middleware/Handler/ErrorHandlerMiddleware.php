@@ -12,7 +12,7 @@ use App\Service\Http\Contract\ContextMiddlewareInterface;
 use Psr\Log\LoggerInterface;
 
 #[Middleware(priority: 100)]
-class ErrorHandlerMiddleware implements ContextMiddlewareInterface
+final class ErrorHandlerMiddleware implements ContextMiddlewareInterface
 {
     public function __construct(
         private ErrorHandler $errorHandler,

@@ -144,7 +144,7 @@ final class DatabaseConnection
 
         try {
             $pdo->beginTransaction();
-            $result = $callback($this);
+            $result = $callback($pdo);
             $pdo->commit();
 
             return $result;

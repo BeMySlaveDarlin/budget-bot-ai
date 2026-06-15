@@ -39,7 +39,7 @@ final class ReportRepository
                     (t.value->>'currency') AS currency,
                     (t.value->>'description') AS description,
                     (t.value->>'wallet') AS wallet
-                FROM messages m
+                FROM budget_messages m
                 CROSS JOIN LATERAL jsonb_array_elements(m.categorized) WITH ORDINALITY AS t(value, idx)
                 WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                   AND m.created_at BETWEEN ? AND ?
@@ -154,7 +154,7 @@ final class ReportRepository
                 (t.value->>'amount')::NUMERIC AS amount,
                 (t.value->>'currency') AS currency,
                 m.created_at
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'
@@ -175,7 +175,7 @@ final class ReportRepository
                 (t.value->>'amount')::NUMERIC AS amount,
                 (t.value->>'currency') AS currency,
                 m.created_at AS balance_at
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'
@@ -195,7 +195,7 @@ final class ReportRepository
             SELECT (t.value->>'type') AS type,
                    (t.value->>'amount')::NUMERIC AS amount,
                    (t.value->>'currency') AS currency
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND m.created_at > ?
@@ -227,7 +227,7 @@ final class ReportRepository
         $params[] = $to;
 
         return $this->db->update(
-            "UPDATE messages SET categorized = NULL WHERE chat_id = ? {$topicFilter} AND created_at BETWEEN ? AND ? AND categorized IS NOT NULL",
+            "UPDATE budget_messages SET categorized = NULL WHERE chat_id = ? {$topicFilter} AND created_at BETWEEN ? AND ? AND categorized IS NOT NULL",
             $params
         );
     }
@@ -244,12 +244,12 @@ final class ReportRepository
         ]], JSON_UNESCAPED_UNICODE);
 
         return $this->db->insert(
-            "INSERT INTO messages (chat_id, user_id, telegram_message_id, raw_text, categorized, topic_id, created_at) VALUES (?, ?, NULL, ?, ?::jsonb, ?, NOW())",
-            [$chatId, $userId, $data['description'], $item, $topicId]
+            "INSERT INTO budget_messages (chat_id, user_id, telegram_message_id, raw_text, categorized, topic_id, created_at) VALUES (?, ?, NULL, ?, ?::jsonb, ?, NOW())",
+            [$chatId, $userId ?: null, $data['description'], $item, $topicId]
         );
     }
 
-    public function updateTransaction(int $messageId, int $itemIndex, array $data): bool
+    public function updateTransaction(int $messageId, int $itemIndex, int $chatId, array $data): bool
     {
         $element = json_encode([
             'type' => $data['type'],
@@ -263,34 +263,52 @@ final class ReportRepository
         $arrayIndex = $itemIndex - 1;
 
         $rowsAffected = $this->db->update(
-            "UPDATE messages SET categorized = jsonb_set(categorized, ARRAY[?::text], ?::jsonb), raw_text = ? WHERE id = ?",
-            [(string) $arrayIndex, $element, $data['description'], $messageId]
+            "UPDATE budget_messages SET categorized = jsonb_set(categorized, ARRAY[?::text], ?::jsonb), raw_text = ? WHERE id = ? AND chat_id = ?",
+            [(string) $arrayIndex, $element, $data['description'], $messageId, $chatId]
         );
 
         return $rowsAffected > 0;
     }
 
-    public function deleteTransaction(int $messageId, int $itemIndex): bool
+    public function deleteTransaction(int $messageId, int $itemIndex, int $chatId): bool
     {
         $arrayIndex = $itemIndex - 1;
 
-        $row = $this->db->queryFirst(
-            "SELECT jsonb_array_length(categorized) AS len FROM messages WHERE id = ?",
-            [$messageId]
-        );
+        return (bool) $this->db->transaction(function (\PDO $pdo) use ($messageId, $itemIndex, $chatId, $arrayIndex): bool {
+            $select = $pdo->prepare(
+                "SELECT jsonb_array_length(categorized) AS len FROM budget_messages WHERE id = ? AND chat_id = ? FOR UPDATE"
+            );
+            $select->bindValue(1, $messageId, \PDO::PARAM_INT);
+            $select->bindValue(2, $chatId, \PDO::PARAM_INT);
+            $select->execute();
+            $row = $select->fetch(\PDO::FETCH_ASSOC);
 
-        if ($row === null) {
-            return false;
-        }
+            if ($row === false) {
+                return false;
+            }
 
-        if ((int) $row['len'] <= 1) {
-            return $this->db->delete("DELETE FROM messages WHERE id = ?", [$messageId]) > 0;
-        }
+            $length = (int) $row['len'];
+            if ($itemIndex > $length) {
+                return false;
+            }
 
-        return $this->db->update(
-            "UPDATE messages SET categorized = categorized - ? WHERE id = ?",
-            [$arrayIndex, $messageId]
-        ) > 0;
+            if ($length <= 1) {
+                $delete = $pdo->prepare("DELETE FROM budget_messages WHERE id = ? AND chat_id = ?");
+                $delete->bindValue(1, $messageId, \PDO::PARAM_INT);
+                $delete->bindValue(2, $chatId, \PDO::PARAM_INT);
+                $delete->execute();
+
+                return $delete->rowCount() > 0;
+            }
+
+            $update = $pdo->prepare("UPDATE budget_messages SET categorized = categorized - ?::int WHERE id = ? AND chat_id = ?");
+            $update->bindValue(1, $arrayIndex, \PDO::PARAM_INT);
+            $update->bindValue(2, $messageId, \PDO::PARAM_INT);
+            $update->bindValue(3, $chatId, \PDO::PARAM_INT);
+            $update->execute();
+
+            return $update->rowCount() > 0;
+        });
     }
 
     public function getDistinctCurrencies(int $chatId, ?int $topicId = null): array
@@ -300,7 +318,7 @@ final class ReportRepository
 
         $sql = <<<SQL
             SELECT DISTINCT UPPER(t.value->>'currency') AS currency
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'currency' IS NOT NULL
@@ -317,7 +335,7 @@ final class ReportRepository
 
         $sql = <<<SQL
             SELECT DISTINCT (t.value->>'category') AS category
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' IN ('income', 'expense')
@@ -335,7 +353,7 @@ final class ReportRepository
 
         $sql = <<<SQL
             SELECT DISTINCT (t.value->>'wallet') AS wallet
-            FROM messages m
+            FROM budget_messages m
             CROSS JOIN LATERAL jsonb_array_elements(m.categorized) AS t(value)
             WHERE m.chat_id = ? {$topicFilter} AND m.categorized IS NOT NULL
                 AND t.value->>'type' = 'balance'

@@ -70,12 +70,12 @@ final class ViewCommand implements BotCommandInterface
         $topicParam = $topicId !== null ? "&topic_id={$topicId}" : '';
 
         if ($isPrivate) {
-            $url = "{$appUrl}/report?chat_id={$chatId}{$topicParam}";
+            $url = "{$appUrl}/budget?chat_id={$chatId}{$topicParam}";
             $button = ['text' => '📊 Открыть отчёт', 'web_app' => ['url' => $url]];
         } else {
             $ts = time();
-            $sig = hash_hmac('sha256', "{$chatId}:{$ts}", $this->config->get('telegram.bot_token', ''));
-            $url = "{$appUrl}/report?chat_id={$chatId}&ts={$ts}&sig={$sig}{$topicParam}";
+            $sig = hash_hmac('sha256', "{$chatId}:{$ts}", $this->config->get('telegram.budget_bot_token', ''));
+            $url = "{$appUrl}/budget?chat_id={$chatId}&ts={$ts}&sig={$sig}{$topicParam}";
             $button = ['text' => '📊 Открыть отчёт', 'url' => $url];
         }
 

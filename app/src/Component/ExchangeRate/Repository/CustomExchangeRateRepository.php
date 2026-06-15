@@ -19,7 +19,7 @@ final class CustomExchangeRateRepository
     {
         $this->db->execute(
             <<<'SQL'
-                INSERT INTO custom_exchange_rates (chat_id, currency_from, currency_to, rate, updated_at)
+                INSERT INTO budget_custom_exchange_rates (chat_id, currency_from, currency_to, rate, updated_at)
                 VALUES (?, ?, ?, ?, NOW())
                 ON CONFLICT (chat_id, currency_from, currency_to) DO UPDATE
                 SET rate = EXCLUDED.rate, updated_at = NOW()
@@ -31,7 +31,7 @@ final class CustomExchangeRateRepository
     public function getRate(int $chatId, string $currencyFrom, string $currencyTo): ?float
     {
         $row = $this->db->queryFirst(
-            "SELECT rate FROM custom_exchange_rates WHERE chat_id = ? AND currency_from = ? AND currency_to = ?",
+            "SELECT rate FROM budget_custom_exchange_rates WHERE chat_id = ? AND currency_from = ? AND currency_to = ?",
             [$chatId, strtoupper($currencyFrom), strtoupper($currencyTo)]
         );
 
@@ -41,7 +41,7 @@ final class CustomExchangeRateRepository
     public function getAllForChat(int $chatId): array
     {
         return $this->db->query(
-            "SELECT currency_from, currency_to, rate, updated_at FROM custom_exchange_rates WHERE chat_id = ? ORDER BY currency_from",
+            "SELECT currency_from, currency_to, rate, updated_at FROM budget_custom_exchange_rates WHERE chat_id = ? ORDER BY currency_from",
             [$chatId]
         );
     }
@@ -49,7 +49,7 @@ final class CustomExchangeRateRepository
     public function delete(int $chatId, string $currencyFrom, string $currencyTo): bool
     {
         return $this->db->delete(
-            "DELETE FROM custom_exchange_rates WHERE chat_id = ? AND currency_from = ? AND currency_to = ?",
+            "DELETE FROM budget_custom_exchange_rates WHERE chat_id = ? AND currency_from = ? AND currency_to = ?",
             [$chatId, strtoupper($currencyFrom), strtoupper($currencyTo)]
         ) > 0;
     }

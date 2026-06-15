@@ -27,7 +27,8 @@ class UserRepository
     {
         return $this->db->insert(
             "INSERT INTO telegram_users (telegram_id, username, first_name, last_name, language_code, is_premium)
-             VALUES (?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (telegram_id) DO NOTHING",
             [
                 $from['id'],
                 $from['username'] ?? null,
@@ -50,9 +51,9 @@ class UserRepository
             return $user;
         }
 
-        $id = $this->create($from);
+        $this->create($from);
 
-        return $this->findByTelegramId($from['id']) ?? ['id' => $id, 'enabled' => false];
+        return $this->findByTelegramId($from['id']) ?? ['id' => 0, 'enabled' => false];
     }
 
     public function enable(int $id): void

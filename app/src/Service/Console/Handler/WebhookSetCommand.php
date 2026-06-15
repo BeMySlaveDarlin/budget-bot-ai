@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Service\Console\Handler;
 
 use App\Service\Attribute\Command;
-use App\Service\Console\Contract\CommandInterface;
 use App\Service\Config\Config;
+use App\Service\Console\Contract\CommandInterface;
 use GuzzleHttp\Client;
 
 #[Command(name: 'webhook:set', description: 'Set Telegram webhook')]
@@ -24,14 +24,16 @@ class WebhookSetCommand implements CommandInterface
         if (empty($url)) {
             echo "Usage: webhook:set <url>\n";
             echo "Example: webhook:set https://example.com/telegram/webhook\n";
+
             return 1;
         }
 
-        $token = $this->config->get('telegram.bot_token');
+        $token = $this->config->get('telegram.budget_bot_token');
         $secret = $this->config->get('telegram.webhook_secret', '');
 
         if (empty($token)) {
-            echo "TELEGRAM_BOT_TOKEN not configured.\n";
+            echo "BUDGET_BOT_TOKEN not configured.\n";
+
             return 1;
         }
 
@@ -55,13 +57,16 @@ class WebhookSetCommand implements CommandInterface
 
             if ($data['ok']) {
                 echo "Webhook set successfully: {$url}\n";
+
                 return 0;
             } else {
                 echo "Error: " . ($data['description'] ?? 'Unknown error') . "\n";
+
                 return 1;
             }
         } catch (\Throwable $e) {
             echo "Error: " . $e->getMessage() . "\n";
+
             return 1;
         }
     }

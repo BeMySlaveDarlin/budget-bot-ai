@@ -37,29 +37,15 @@ class ChatPromptRepository
 
     public function setPrompt(int $chatId, string $type, string $text, ?int $topicId = null): void
     {
-        if ($topicId !== null) {
-            $existing = $this->db->queryFirst(
-                'SELECT id FROM chat_prompts WHERE chat_id = ? AND prompt_type = ? AND topic_id = ?',
-                [$chatId, $type, $topicId]
-            );
-        } else {
-            $existing = $this->db->queryFirst(
-                'SELECT id FROM chat_prompts WHERE chat_id = ? AND prompt_type = ? AND topic_id IS NULL',
-                [$chatId, $type]
-            );
-        }
-
-        if ($existing) {
-            $this->db->execute(
-                'UPDATE chat_prompts SET prompt_text = ?, updated_at = NOW() WHERE id = ?',
-                [$text, $existing['id']]
-            );
-        } else {
-            $this->db->insert(
-                'INSERT INTO chat_prompts (chat_id, prompt_type, prompt_text, topic_id, updated_at) VALUES (?, ?, ?, ?, NOW())',
-                [$chatId, $type, $text, $topicId]
-            );
-        }
+        $this->db->execute(
+            <<<'SQL'
+                INSERT INTO chat_prompts (chat_id, topic_id, prompt_type, prompt_text, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NOW(), NOW())
+                ON CONFLICT (chat_id, COALESCE(topic_id, 0), prompt_type) DO UPDATE
+                SET prompt_text = EXCLUDED.prompt_text, updated_at = NOW()
+            SQL,
+            [$chatId, $topicId, $type, $text]
+        );
     }
 
     public function deletePrompt(int $chatId, string $type, ?int $topicId = null): void

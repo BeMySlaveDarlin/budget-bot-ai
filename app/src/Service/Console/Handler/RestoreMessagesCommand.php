@@ -110,7 +110,7 @@ final class RestoreMessagesCommand implements CommandInterface
                   AND raw_json->'message'->>'text' ~ '\d'
             )
             SELECT m.id, m.telegram_message_id, m.created_at, m.raw_text AS current_text, st.original_text
-            FROM messages m
+            FROM budget_messages m
             JOIN source_texts st ON st.tg_message_id = m.telegram_message_id
             WHERE m.chat_id = ? AND m.topic_id = ?
               {$dateFilter}
@@ -131,7 +131,7 @@ final class RestoreMessagesCommand implements CommandInterface
 
             if (!$dryRun) {
                 $this->db->execute(
-                    "UPDATE messages SET raw_text = ?, categorized = NULL WHERE id = ?",
+                    "UPDATE budget_messages SET raw_text = ?, categorized = NULL WHERE id = ?",
                     [$row['original_text'], $row['id']]
                 );
             }

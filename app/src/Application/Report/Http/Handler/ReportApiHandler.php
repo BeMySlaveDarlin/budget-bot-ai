@@ -15,6 +15,10 @@ use App\Service\Task\TaskManager;
 
 final class ReportApiHandler
 {
+    private const MAX_CATEGORY_LENGTH = 200;
+    private const MAX_WALLET_LENGTH = 200;
+    private const MAX_DESCRIPTION_LENGTH = 1000;
+
     public function __construct(
         private ReportService $reportService,
         private ReportRepository $reportRepository,
@@ -25,15 +29,8 @@ final class ReportApiHandler
     #[Route('/api/report/summary', 'GET')]
     public function summary(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -45,15 +42,8 @@ final class ReportApiHandler
     #[Route('/api/report/categories', 'GET')]
     public function categories(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -65,15 +55,8 @@ final class ReportApiHandler
     #[Route('/api/report/transactions', 'GET')]
     public function transactions(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -85,15 +68,8 @@ final class ReportApiHandler
     #[Route('/api/report/trends', 'GET')]
     public function trends(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -105,15 +81,8 @@ final class ReportApiHandler
     #[Route('/api/report/wallets', 'GET')]
     public function wallets(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -124,15 +93,8 @@ final class ReportApiHandler
     #[Route('/api/report/comparison', 'GET')]
     public function comparison(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -144,15 +106,8 @@ final class ReportApiHandler
     #[Route('/api/report/export', 'GET')]
     public function export(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -167,15 +122,8 @@ final class ReportApiHandler
     #[Route('/api/report/refresh', 'POST')]
     public function refresh(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -187,15 +135,10 @@ final class ReportApiHandler
     #[Route('/api/report/transactions', 'POST')]
     public function createTransaction(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $requested = (int) $request->getQueryParam('chat_id', 0);
+        $access = $this->auth->resolveAccess($request, $requested);
+        if (!$access->granted) {
+            $response->json(['error' => $access->denyError], $access->denyStatus);
             return;
         }
 
@@ -206,10 +149,10 @@ final class ReportApiHandler
             return;
         }
 
-        $userId = (int) ($user['id'] ?? 0);
+        $userId = (int) ($access->user['id'] ?? 0);
         $topicId = $request->getQueryParam('topic_id') !== null ? (int) $request->getQueryParam('topic_id') : null;
 
-        $id = $this->reportRepository->createTransaction($chatId, $userId, [
+        $id = $this->reportRepository->createTransaction($access->chatId, $userId, [
             'type' => $body['type'],
             'amount' => (float) $body['amount'],
             'currency' => $body['currency'],
@@ -224,9 +167,8 @@ final class ReportApiHandler
     #[Route('/api/report/transactions', 'PUT')]
     public function updateTransaction(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -234,7 +176,7 @@ final class ReportApiHandler
 
         $messageId = (int) ($body['message_id'] ?? 0);
         $itemIndex = (int) ($body['item_index'] ?? 0);
-        if ($messageId === 0 || $itemIndex === 0) {
+        if ($messageId === 0 || $itemIndex < 1) {
             $response->json(['error' => 'message_id and item_index required'], 400);
             return;
         }
@@ -245,7 +187,7 @@ final class ReportApiHandler
             return;
         }
 
-        $success = $this->reportRepository->updateTransaction($messageId, $itemIndex, [
+        $success = $this->reportRepository->updateTransaction($messageId, $itemIndex, $chatId, [
             'type' => $body['type'],
             'amount' => (float) $body['amount'],
             'currency' => $body['currency'],
@@ -260,20 +202,19 @@ final class ReportApiHandler
     #[Route('/api/report/transactions', 'DELETE')]
     public function deleteTransaction(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
         $messageId = (int) $request->getQueryParam('message_id', 0);
         $itemIndex = (int) $request->getQueryParam('item_index', 0);
-        if ($messageId === 0 || $itemIndex === 0) {
+        if ($messageId === 0 || $itemIndex < 1) {
             $response->json(['error' => 'message_id and item_index required'], 400);
             return;
         }
 
-        $success = $this->reportRepository->deleteTransaction($messageId, $itemIndex);
+        $success = $this->reportRepository->deleteTransaction($messageId, $itemIndex, $chatId);
 
         $response->json(['success' => $success]);
     }
@@ -281,15 +222,8 @@ final class ReportApiHandler
     #[Route('/api/report/rates', 'GET')]
     public function rates(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -302,15 +236,8 @@ final class ReportApiHandler
     #[Route('/api/report/rates', 'PUT')]
     public function upsertRate(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -331,15 +258,8 @@ final class ReportApiHandler
     #[Route('/api/report/rates', 'DELETE')]
     public function deleteRate(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -358,15 +278,8 @@ final class ReportApiHandler
     #[Route('/api/report/suggestions', 'GET')]
     public function suggestions(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
-            return;
-        }
-
-        $chatId = (int) $request->getQueryParam('chat_id', 0);
-        if ($chatId === 0) {
-            $response->json(['error' => 'chat_id required'], 400);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -380,9 +293,8 @@ final class ReportApiHandler
     #[Route('/api/report/task-status', 'GET')]
     public function taskStatus(Request $request, Response $response): void
     {
-        $user = $this->auth->validate($request);
-        if (!$user) {
-            $response->json(['error' => 'Unauthorized'], 401);
+        $chatId = $this->guard($request, $response);
+        if ($chatId === null) {
             return;
         }
 
@@ -417,6 +329,18 @@ final class ReportApiHandler
             ->status(204);
     }
 
+    private function guard(Request $request, Response $response): ?int
+    {
+        $requested = (int) $request->getQueryParam('chat_id', 0);
+        $access = $this->auth->resolveAccess($request, $requested);
+        if (!$access->granted) {
+            $response->json(['error' => $access->denyError], $access->denyStatus);
+            return null;
+        }
+
+        return $access->chatId;
+    }
+
     private function validateTransactionBody(array $body): ?string
     {
         $type = $body['type'] ?? '';
@@ -439,6 +363,18 @@ final class ReportApiHandler
 
         if (in_array($type, ['income', 'expense'], true) && empty($body['category'])) {
             return 'category required for income/expense type';
+        }
+
+        if (is_string($body['category'] ?? null) && mb_strlen($body['category']) > self::MAX_CATEGORY_LENGTH) {
+            return 'category too long';
+        }
+
+        if (is_string($body['wallet'] ?? null) && mb_strlen($body['wallet']) > self::MAX_WALLET_LENGTH) {
+            return 'wallet too long';
+        }
+
+        if (is_string($body['description'] ?? null) && mb_strlen($body['description']) > self::MAX_DESCRIPTION_LENGTH) {
+            return 'description too long';
         }
 
         return null;
